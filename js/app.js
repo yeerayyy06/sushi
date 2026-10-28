@@ -4,6 +4,7 @@ import { createAuth } from './auth.js';
 import { createStore, STATUS } from './store.js';
 import { createMap, MAP_STYLES } from './map.js';
 import { createUI } from './ui.js';
+import { createCounter } from './counter.js';
 import { searchPlaces, discoverSushi, reverseGeocode, getSearchProvider, findPlaceAt } from './search.js';
 import { todayISO, normalize, distanceMeters, plural, isAbortError, isValidLatLng, randomId, debounce, formatDate, formatDistance } from './util.js';
 
@@ -76,6 +77,11 @@ const ui = createUI({
   onClearSuggestions: clearSuggestions,
   onLocate: locate,
   onAdd: openAddSheet,
+  onCounter: ({ fromDetail = false } = {}) => {
+    ui.setMenuOpen(false);
+    const place = (fromDetail || state.selectedId) && placeById(state.selectedId);
+    counter.open({ placeName: place ? place.name : '' });
+  },
   onCrosshairConfirm: confirmCrosshair,
   onCrosshairCancel: () => exitCrosshair({ cancelled: true }),
   onEscape: () => {
@@ -116,6 +122,12 @@ const ui = createUI({
     }
   },
 });
+
+const counter = createCounter({
+  celebrate: (origin, opts) => ui.celebrate(origin, opts),
+  onChange: (total) => ui.setCounterBadge(total),
+});
+ui.setCounterBadge(counter.total());
 
 // ---------------------------------------------------------------------------
 // Arranque
@@ -231,7 +243,7 @@ async function enterApp() {
     map.invalidate();
   }
   const demo = auth.mode === 'demo';
-  ui.setMenuFooter(`${CONFIG.dedication || CONFIG.title}${demo ? ' · Modo demo' : ''}`);
+  ui.setMenuFooter(demo ? 'Modo demo: los datos viven solo en este navegador.' : '');
   ui.setDemoChip(demo);
   ui.showView('list');
   ui.setSheet('peek');
@@ -917,6 +929,11 @@ function onMenuAction(action) {
     case 'random':
       pickRandom();
       break;
+    case 'counter': {
+      const place = placeById(state.selectedId);
+      counter.open({ placeName: place ? place.name : '' });
+      break;
+    }
     case 'stats':
       showNumbers();
       break;

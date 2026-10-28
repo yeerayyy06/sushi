@@ -4,14 +4,14 @@
 
 export const CONFIG = {
   // Textos de la cabecera y de la pantalla de entrada.
-  title: 'Nuestro mapa de sushi',
-  subtitle: 'Cada sushi al que hemos ido. Y los que nos quedan.',
+  title: 'Mapa de Sushi',
+  subtitle: 'Todos nuestros sushis, en un solo mapa.',
 
   // Vuestras iniciales para el botón del menú (p. ej. 'Y·A'). Vacío = icono de tres rayas.
   initials: '',
 
-  // Dedicatoria: aparece al pie de la pantalla de entrada y del menú. (Ojo: este archivo es público.)
-  dedication: 'Hecho a mano, para nosotros dos.',
+  // Dedicatoria opcional al pie de la pantalla de entrada. Vacío = no se enseña. (Ojo: este archivo es público.)
+  dedication: '',
 
   // Mensaje de bienvenida: se enseña UNA vez por dispositivo la primera vez que se entra. Vacío = no se enseña.
   welcome: '',

@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="robots" content="noindex, nofollow">
-  <title>Nuestro mapa de sushi</title>
-  <meta name="description" content="Los sushis a los que hemos ido y los que nos quedan por probar.">
+  <title>Mapa de Sushi</title>
+  <meta name="description" content="Todos nuestros sushis, en un solo mapa.">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#f6f3ed">
+  <meta name="theme-color" content="#e8505b">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./lib/leaflet/leaflet.css">
-  <link rel="stylesheet" href="./css/styles.css?v=5">
+  <link rel="stylesheet" href="./css/styles.css?v=6">
   <script>
     // Tema antes del primer pintado (evita el parpadeo claro->oscuro). Preferencia: auto | light | dark.
     (function () {
@@ -34,33 +34,59 @@
 </head>
 <body>
 
+  <!-- Fondo animado compartido por la pantalla de carga y la de entrada -->
+  <div class="welcome-bg" id="welcome-bg" aria-hidden="true">
+    <span class="welcome-bg__blob welcome-bg__blob--1"></span>
+    <span class="welcome-bg__blob welcome-bg__blob--2"></span>
+    <span class="welcome-bg__blob welcome-bg__blob--3"></span>
+      <span class="float" style="--x:6%;--d:19s;--delay:-2s;--s:34px">🍣</span>
+      <span class="float" style="--x:18%;--d:24s;--delay:-15s;--s:24px">🍥</span>
+      <span class="float" style="--x:31%;--d:21s;--delay:-8s;--s:30px">🥢</span>
+      <span class="float" style="--x:44%;--d:26s;--delay:-20s;--s:26px">🍙</span>
+      <span class="float" style="--x:57%;--d:18s;--delay:-5s;--s:40px">🍣</span>
+      <span class="float" style="--x:69%;--d:23s;--delay:-12s;--s:28px">🍤</span>
+      <span class="float" style="--x:81%;--d:20s;--delay:-17s;--s:30px">🍣</span>
+      <span class="float" style="--x:92%;--d:25s;--delay:-3s;--s:24px">🥟</span>
+      <span class="float" style="--x:12%;--d:27s;--delay:-23s;--s:22px">🍥</span>
+      <span class="float" style="--x:38%;--d:22s;--delay:-11s;--s:26px">🍣</span>
+      <span class="float" style="--x:63%;--d:28s;--delay:-26s;--s:22px">🥢</span>
+      <span class="float" style="--x:86%;--d:17s;--delay:-9s;--s:32px">🍙</span>
+  </div>
+
   <!-- Pantalla de carga -->
   <div id="splash" class="splash" aria-live="polite">
-    <span class="dot dot--pulse" aria-hidden="true"></span>
+    <img class="splash__logo" src="./icons/icon-192.png" alt="" width="84" height="84">
     <p id="splash-text">Abriendo el mapa…</p>
   </div>
 
   <!-- Entrada -->
   <main id="login" class="login" hidden>
     <form id="login-form" class="login__card" novalidate>
-      <span class="dot" aria-hidden="true"></span>
-      <h1 class="login__title" id="login-title">Nuestro mapa de sushi</h1>
-      <p class="login__subtitle" id="login-subtitle">Cada sushi al que hemos ido. Y los que nos quedan.</p>
+      <img class="login__logo" src="./icons/icon-192.png" alt="" width="92" height="92">
+      <h1 class="login__title" id="login-title">Mapa de Sushi</h1>
+      <p class="login__subtitle" id="login-subtitle">Todos nuestros sushis, en un solo mapa.</p>
 
       <!-- Usuario oculto: así el gestor de contraseñas del móvil recuerda la contraseña -->
       <input class="visually-hidden" type="text" name="username" id="login-username" autocomplete="username" value="sushi" tabindex="-1" aria-hidden="true">
 
-      <label class="label" for="password">Contraseña</label>
-      <div class="field">
+      <label class="visually-hidden" for="password">Contraseña</label>
+      <div class="field field--login">
+        <svg class="field__icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
         <input id="password" name="password" type="password" autocomplete="current-password" required
-               placeholder="La de siempre…" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
-        <button type="button" class="field__toggle" id="toggle-password" aria-pressed="false">Mostrar</button>
+               placeholder="Escribe la contraseña" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
+        <button type="button" class="field__toggle" id="toggle-password" aria-pressed="false" aria-label="Mostrar contraseña">
+          <svg class="eye eye--show" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg class="eye eye--hide" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.8 9.8 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+        </button>
       </div>
-      <button type="submit" class="btn btn--primary btn--block" id="login-submit">Entrar</button>
+      <button type="submit" class="btn btn--login" id="login-submit">
+        <span id="login-submit-label">Entrar</span>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </button>
       <p class="login__error" id="login-error" role="alert" hidden></p>
       <p class="login__note" id="login-demo" hidden>Modo demo: lo que guardes se queda solo en este navegador.</p>
       <p class="login__note" id="login-bye" hidden></p>
-      <p class="login__dedication" id="login-dedication"></p>
+      <p class="login__dedication" id="login-dedication" hidden></p>
     </form>
   </main>
 
@@ -69,7 +95,7 @@
     <div id="map" class="map" role="application" aria-label="Mapa de sushis"></div>
 
     <header class="topbar">
-      <span class="wordmark" id="wordmark">Nuestro mapa de sushi</span>
+      <span class="wordmark" id="wordmark">Mapa de Sushi</span>
       <button type="button" class="iconbtn" id="menu-button" aria-label="Menú" aria-haspopup="true" aria-expanded="false">
         <span class="iconbtn__monogram" id="menu-monogram" hidden></span>
         <span class="iconbtn__bars" id="menu-bars" aria-hidden="true"><i></i><i></i><i></i></span>
@@ -106,8 +132,9 @@
         </div>
         <hr class="menu__hr">
         <button type="button" class="menu__item" data-action="home">🏠 Nuestra casa</button>
+        <button type="button" class="menu__item" data-action="counter">🍣 Contador de piezas</button>
         <button type="button" class="menu__item" data-action="random">🎲 ¿Dónde vamos hoy?</button>
-        <button type="button" class="menu__item" data-action="stats">📊 Nuestro sushi en números</button>
+        <button type="button" class="menu__item" data-action="stats">📊 Estadísticas</button>
         <button type="button" class="menu__item" data-action="fit">🗺️ Ver todos los sitios</button>
         <hr class="menu__hr">
         <button type="button" class="menu__item" data-action="export">Descargar copia (JSON)</button>
@@ -129,9 +156,15 @@
           <span id="nearby-label">Sushi por aquí</span>
         </button>
       </div>
+      <div class="fabs__side">
+        <button type="button" class="fab fab--counter" id="counter-button" aria-label="Contador de piezas de sushi">
+          <span class="fab__emoji" aria-hidden="true">🍣</span>
+          <span class="fab__badge" id="counter-badge" hidden>0</span>
+        </button>
       <button type="button" class="fab" id="locate-button" aria-label="Mi ubicación">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
       </button>
+      </div>
     </div>
 
     <!-- Modo "marcar en el mapa" -->
@@ -230,8 +263,9 @@
             <button type="button" class="link link--danger" id="detail-delete">Eliminar sitio</button>
           </div>
         </div>
-        <footer class="sheetfoot">
+        <footer class="sheetfoot sheetfoot--detail">
           <button type="button" class="btn btn--primary btn--big" id="detail-plus">+1 visita · hoy</button>
+          <button type="button" class="btn btn--outline btn--big btn--counter" id="detail-counter-button" aria-label="Contador de piezas">🍣 Contar</button>
         </footer>
       </section>
 
@@ -283,12 +317,50 @@
 
     <dialog class="dialog" id="stats-dialog">
       <form method="dialog" class="dialog__form">
-        <h3 class="dialog__title">Nuestro sushi en números</h3>
+        <h3 class="dialog__title">Estadísticas</h3>
         <dl class="numbers" id="stats-body"></dl>
         <div class="dialog__actions">
           <button type="submit" class="textbtn">Cerrar</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog class="counter-dialog" id="counter-dialog" aria-labelledby="counter-title">
+      <div class="counter-screen">
+        <header class="counter-screen__head">
+          <button type="button" class="counter-screen__icon" id="counter-close" aria-label="Cerrar el contador">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+          </button>
+          <div class="counter-screen__titles">
+            <h3 id="counter-title">Contador de piezas</h3>
+            <p id="counter-place"></p>
+          </div>
+          <button type="button" class="counter-screen__mode" id="counter-mode">Juntos</button>
+        </header>
+
+        <div class="counter-screen__total" aria-live="polite">
+          <b id="counter-total">0</b>
+          <span id="counter-total-label">piezas</span>
+        </div>
+
+        <div class="counter-screen__people" id="counter-people">
+          <div class="person" data-i="0">
+            <button type="button" class="person__name" data-i="0" aria-label="Cambiar nombre">Yo</button>
+            <button type="button" class="person__tap" data-i="0" aria-label="Sumar una pieza"><span class="person__emoji" aria-hidden="true">🍣</span><b class="person__count">0</b></button>
+            <button type="button" class="person__minus" data-i="0" aria-label="Quitar una pieza">−1</button>
+          </div>
+          <div class="person" data-i="1">
+            <button type="button" class="person__name" data-i="1" aria-label="Cambiar nombre">Tú</button>
+            <button type="button" class="person__tap" data-i="1" aria-label="Sumar una pieza"><span class="person__emoji" aria-hidden="true">🍣</span><b class="person__count">0</b></button>
+            <button type="button" class="person__minus" data-i="1" aria-label="Quitar una pieza">−1</button>
+          </div>
+        </div>
+
+        <footer class="counter-screen__foot">
+          <p class="counter-screen__hint" id="counter-hint">Toca el sushi cada vez que os comáis una pieza.</p>
+          <button type="button" class="counter-screen__reset" id="counter-reset">Empezar de cero</button>
+        </footer>
+      </div>
     </dialog>
 
     <dialog class="dialog" id="confirm-dialog">
@@ -340,15 +412,16 @@
   <script type="importmap">
     {
       "imports": {
-        "./js/app.js": "./js/app.js?v=5",
-        "./js/auth.js": "./js/auth.js?v=5",
-        "./js/config.js": "./js/config.js?v=5",
-        "./js/firebase.js": "./js/firebase.js?v=5",
-        "./js/map.js": "./js/map.js?v=5",
-        "./js/search.js": "./js/search.js?v=5",
-        "./js/store.js": "./js/store.js?v=5",
-        "./js/ui.js": "./js/ui.js?v=5",
-        "./js/util.js": "./js/util.js?v=5"
+        "./js/app.js": "./js/app.js?v=6",
+        "./js/auth.js": "./js/auth.js?v=6",
+        "./js/config.js": "./js/config.js?v=6",
+        "./js/firebase.js": "./js/firebase.js?v=6",
+        "./js/map.js": "./js/map.js?v=6",
+        "./js/search.js": "./js/search.js?v=6",
+        "./js/store.js": "./js/store.js?v=6",
+        "./js/ui.js": "./js/ui.js?v=6",
+        "./js/util.js": "./js/util.js?v=6",
+        "./js/counter.js": "./js/counter.js?v=6"
       }
     }
   </script>

@@ -14,10 +14,10 @@ const VIEW_ORDER = { list: 0, detail: 1, new: 1 };
  */
 export function createUI(handlers = {}) {
   const ids = [
-    'splash', 'splash-text', 'login', 'login-form', 'login-title', 'login-subtitle', 'login-username', 'login-error', 'login-demo', 'login-bye',
+    'splash', 'splash-text', 'welcome-bg', 'login', 'login-form', 'login-submit-label', 'login-title', 'login-subtitle', 'login-username', 'login-error', 'login-demo', 'login-bye',
     'login-dedication', 'login-submit', 'password', 'toggle-password', 'app', 'wordmark', 'menu-button', 'menu-monogram', 'menu-bars',
     'search-form', 'search-input', 'search-clear', 'search-results', 'menu', 'theme-seg', 'menu-footer', 'import-file',
-    'fabs', 'add-button', 'nearby-button', 'nearby-label', 'locate-button', 'mapstyle-seg',
+    'fabs', 'add-button', 'nearby-button', 'nearby-label', 'locate-button', 'mapstyle-seg', 'counter-button', 'counter-badge', 'detail-counter-button',
     'actions-dialog', 'actions-title', 'actions-text', 'actions-list', 'actions-cancel', 'stats-dialog', 'stats-body', 'crosshair', 'crosshair-text', 'crosshair-confirm', 'crosshair-cancel',
     'panel', 'panel-grip', 'panel-handle', 'view-list', 'view-detail', 'view-new',
     'stats-line', 'stats-since', 'offline', 'tab-visited', 'tab-pending', 'count-visited', 'count-pending', 'rows', 'empty', 'empty-title', 'empty-text', 'empty-action',
@@ -54,12 +54,17 @@ export function createUI(handlers = {}) {
   // ---------------------------------------------------------------------------
   function showSplash(show) {
     els.splash.hidden = !show;
+    syncWelcomeBg();
+  }
+  /** El fondo animado solo se ve (y se anima) en la pantalla de carga y en la de entrada. */
+  function syncWelcomeBg() {
+    els.welcomeBg.hidden = els.splash.hidden && els.login.hidden;
   }
   function setSplashText(text, { static: isStatic = false } = {}) {
     els.splashText.textContent = text;
     els.splashText.style.animation = 'none';
     els.splashText.style.opacity = '1';
-    if (isStatic) els.splash.querySelector('.dot')?.classList.remove('dot--pulse');
+    if (isStatic) els.splash.classList.add('is-static');
   }
   function showLogin({ title, subtitle, demo, dedication, username, bye }) {
     els.loginTitle.textContent = title;
@@ -73,6 +78,9 @@ export function createUI(handlers = {}) {
     els.app.hidden = true;
     els.login.hidden = false;
     showSplash(false);
+    els.loginForm.classList.remove('is-entering', 'is-shaking');
+    void els.loginForm.offsetWidth;
+    els.loginForm.classList.add('is-entering');
     setLoginError(null);
     setLoginBusy(false);
     els.password.value = '';
@@ -93,7 +101,7 @@ export function createUI(handlers = {}) {
    * Confeti de sushi saliendo de un elemento (o de un punto {x, y}).
    * @param {Element|{x:number,y:number}} origin
    */
-  function celebrate(origin, { count = 18, emojis = BURST_EMOJIS, power = 1 } = {}) {
+  function celebrate(origin, { count = 18, emojis = BURST_EMOJIS, power = 1, container = null } = {}) {
     if (reducedMotion.matches || typeof Element.prototype.animate !== 'function') return;
     let x = window.innerWidth / 2;
     let y = window.innerHeight / 2;
@@ -113,7 +121,8 @@ export function createUI(handlers = {}) {
       el.style.left = `${x}px`;
       el.style.top = `${y}px`;
       el.style.fontSize = `${16 + Math.random() * 14}px`;
-      document.body.appendChild(el);
+      // Dentro de un diálogo modal hay que pintarlo dentro (los modales están por encima de todo).
+      (container || document.querySelector('dialog[open]') || document.body).appendChild(el);
       const angle = Math.random() * Math.PI * 2;
       const dist = (60 + Math.random() * 120) * power;
       const dx = Math.cos(angle) * dist;
@@ -146,13 +155,19 @@ export function createUI(handlers = {}) {
     requestAnimationFrame(step);
   }
 
+  function setCounterBadge(total) {
+    els.counterBadge.textContent = total > 99 ? '99+' : String(total);
+    els.counterBadge.hidden = !total;
+    els.counterButton.setAttribute('aria-label', total ? `Contador de piezas: ${total}` : 'Contador de piezas de sushi');
+  }
+
   function setAddAttention(on) {
     els.addButton.classList.toggle('is-attention', Boolean(on) && !reducedMotion.matches);
   }
   function setLoginBusy(busy) {
     els.loginSubmit.classList.toggle('is-busy', busy);
     els.loginSubmit.disabled = busy;
-    els.loginSubmit.textContent = busy ? 'Entrando…' : 'Entrar';
+    els.loginSubmitLabel.textContent = busy ? 'Entrando…' : 'Entrar';
   }
   function setLoginError(message) {
     els.loginError.hidden = !message;
@@ -174,7 +189,7 @@ export function createUI(handlers = {}) {
   els.togglePassword.addEventListener('click', () => {
     const show = els.password.type === 'password';
     els.password.type = show ? 'text' : 'password';
-    els.togglePassword.textContent = show ? 'Ocultar' : 'Mostrar';
+    els.togglePassword.setAttribute('aria-label', show ? 'Ocultar contraseña' : 'Mostrar contraseña');
     els.togglePassword.setAttribute('aria-pressed', String(show));
     els.password.focus();
   });
@@ -404,7 +419,8 @@ export function createUI(handlers = {}) {
     }
   });
   function setMenuFooter(text) {
-    els.menuFooter.textContent = text;
+    els.menuFooter.textContent = text || '';
+    els.menuFooter.hidden = !text;
   }
 
   // ---------------------------------------------------------------------------
@@ -414,6 +430,8 @@ export function createUI(handlers = {}) {
   els.nearbyButton.addEventListener('click', () => (nearbyCount ? handlers.onClearSuggestions?.() : handlers.onNearby?.()));
   els.locateButton.addEventListener('click', () => handlers.onLocate?.());
   els.addButton.addEventListener('click', () => handlers.onAdd?.());
+  els.counterButton.addEventListener('click', () => handlers.onCounter?.());
+  els.detailCounterButton.addEventListener('click', () => handlers.onCounter?.({ fromDetail: true }));
   els.crosshairConfirm.addEventListener('click', () => handlers.onCrosshairConfirm?.());
   els.crosshairCancel.addEventListener('click', () => handlers.onCrosshairCancel?.());
 
@@ -605,7 +623,7 @@ export function createUI(handlers = {}) {
     lastStats = { places, visits };
     els.statsSince.textContent = sinceYear ? `desde ${sinceYear}` : '';
     els.statsSince.hidden = !sinceYear;
-    const title = handlers.appTitle || 'Nuestro mapa de sushi';
+    const title = handlers.appTitle || 'Mapa de Sushi';
     document.title = visits ? `${plural(visits, 'visita', 'visitas')} · ${title}` : title;
   }
 
@@ -1111,6 +1129,7 @@ export function createUI(handlers = {}) {
     setMenuFooter,
     setNearbyState,
     celebrate,
+    setCounterBadge,
     setAddAttention,
     resetListIntro,
     setMapStyleUI,

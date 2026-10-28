@@ -1,12 +1,12 @@
 {
-  "name": "Nuestro mapa de sushi",
+  "name": "Mapa de Sushi",
   "short_name": "Sushi",
-  "description": "Los sushis a los que hemos ido y los que nos quedan por probar.",
+  "description": "Todos nuestros sushis, en un solo mapa.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#f6f3ed",
+  "background_color": "#e8505b",
   "theme_color": "#f6f3ed",
   "lang": "es",
   "icons": [

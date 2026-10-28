@@ -1,4 +1,4 @@
-# 🍣 Nuestro mapa de sushi
+# 🍣 Mapa de Sushi
 
 Una web privada para dos: un mapa en el que marcáis los sushis a los que habéis ido, cuántas veces
 habéis repetido en cada uno, y los que tenéis pendientes de probar.
@@ -84,7 +84,7 @@ que **nunca** está en el código.
    ```bash
    cd Sushi
    git init && git branch -M main
-   git add -A && git commit -m "Nuestro mapa de sushi"
+   git add -A && git commit -m "Mapa de Sushi"
    git remote add origin https://github.com/TU-USUARIO/sushi.git
    git push -u origin main
    ```
@@ -108,7 +108,7 @@ Todo está en [`js/config.js`](js/config.js):
 | `sharedEmail` | Email de la cuenta compartida de Firebase. |
 | `demoPassword` | Contraseña del modo demo (solo cuenta si no hay Firebase). |
 | `initials` | Vuestras iniciales para el botón del menú, por ejemplo `'Y·A'`. Vacío = icono de tres rayas. |
-| `dedication` | Dedicatoria al pie de la pantalla de entrada y del menú. |
+| `dedication` | Dedicatoria opcional al pie de la pantalla de entrada (vacía por defecto). |
 | `welcome` | Mensaje de bienvenida que se muestra una sola vez por dispositivo la primera vez que se entra. Vacío = nada. |
 
 Para cambiar la contraseña: Firebase → Authentication → Users → menú ⋮ del usuario → **Restablecer contraseña**
@@ -149,8 +149,13 @@ se guardan en el teléfono y se sincronizan al volver la conexión.
   - **🏠 Nuestra casa**: marcadla con el GPS o en el mapa. El mapa se abre ahí, la lista dice a qué distancia
     está cada sushi y podéis buscar sushi cerca de casa. Solo la veis vosotros (está en Firestore, no en el código).
   - **🎲 ¿Dónde vamos hoy?**: elige al azar un pendiente (o un visitado si no hay pendientes).
-  - **📊 Nuestro sushi en números**: visitas totales y del año, el de siempre, el mejor puntuado, el primero…
+  - **🍣 Contador de piezas**: también con el botón 🍣 del mapa o «Contar» en la ficha (ver abajo).
+  - **📊 Estadísticas**: visitas totales y del año, el de siempre, el mejor puntuado, el primero…
   - **Ver todos los sitios**, **Descargar copia (JSON)**, **Importar copia** y **Cerrar sesión**.
+- **Contador de piezas** (botón 🍣 encima del de ubicación, o «Contar» en la ficha de un sitio): para ir contando
+  lo que coméis, cada uno con su botón (toca el nombre para cambiarlo) o «Juntos». No se guarda en el historial:
+  el móvil lo recuerda hasta el día siguiente por si se bloquea la pantalla, y el globito del botón 🍣 dice cuántas
+  piezas lleváis. «Empezar de cero» pide un segundo toque.
 - En el móvil, el botón «atrás» cierra la ficha en vez de salir de la web.
 
 ---
