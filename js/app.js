@@ -10,7 +10,7 @@ import { todayISO, normalize, distanceMeters, plural, isAbortError, isValidLatLn
 const VIEW_KEY = 'sushimap:view';
 const TAB_KEY = 'sushimap:tab';
 const WELCOME_KEY = 'sushimap:welcomed';
-const MAPSTYLE_KEY = 'sushimap:mapstyle';
+const MAPSTYLE_KEY = 'sushimap:mapstyle:v2'; // v2: el satélite pasa a ser el estilo por defecto
 // La casa se guarda como un documento más de "places" con esta marca en el campo osm
 // (así encaja en las reglas de Firestore sin tener que cambiarlas). La app la separa del resto.
 const HOME_OSM = 'sushimap:home';
@@ -218,12 +218,12 @@ async function enterApp() {
       onTilesFailing: () => ui.toast('El mapa no carga. La lista sigue funcionando.'),
       onStyleFallback: () => {
         ui.setMapStyleUI('clasico');
-        ui.toast('El mapa en color no carga en este dispositivo; uso el clásico.');
+        ui.toast('El mapa satélite/en color no carga en este dispositivo; uso el clásico.');
       },
     });
     state.firstFit = !saved;
-    const style = readLocal(MAPSTYLE_KEY) || CONFIG.mapStyle || 'color';
-    ui.setMapStyleUI(MAP_STYLES[style] ? style : 'color');
+    const style = readLocal(MAPSTYLE_KEY) || CONFIG.mapStyle || 'satelite';
+    ui.setMapStyleUI(MAP_STYLES[style] ? style : 'satelite');
     map.setStyle(style);
   } else {
     map.invalidate();
@@ -540,6 +540,8 @@ function startCandidate(c) {
   ui.renderCandidate({
     name: state.candidate.name,
     address: state.candidate.address,
+    lat: state.candidate.lat,
+    lng: state.candidate.lng,
     loadingAddress: Boolean(c.needsReverse) && state.online,
     dupe: Boolean(findDuplicate(state.candidate, { strict: false })),
     focusName: !state.candidate.name,

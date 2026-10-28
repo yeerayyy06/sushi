@@ -19,7 +19,7 @@ habéis repetido en cada uno, y los que tenéis pendientes de probar.
 | --- | --- | --- |
 | La web (HTML/CSS/JS, sin frameworks ni build) | Este repo, publicado con **GitHub Pages** | 0 € |
 | La contraseña y los datos compartidos | **Firebase**: Authentication (email + contraseña) y Firestore (base de datos) | 0 € (plan Spark) |
-| Mapa y buscador | OpenFreeMap (mapa en color), OpenStreetMap, Photon y Nominatim (búsqueda) | 0 € (sin registro) |
+| Mapa y buscador | Ortofotos PNOA del IGN y Esri (satélite), OpenFreeMap, OpenStreetMap, Photon y Nominatim | 0 € (sin registro) |
 
 Una web estática no puede guardar nada por sí sola ni esconder una contraseña (todo su código es público),
 así que la contraseña «de verdad» la comprueba Firebase y los datos se guardan en Firestore, protegidos
@@ -103,7 +103,7 @@ Todo está en [`js/config.js`](js/config.js):
 | --- | --- |
 | `title`, `subtitle` | Texto de la cabecera y de la pantalla de entrada. |
 | `defaultCenter`, `defaultZoom` | Dónde se abre el mapa hasta que haya sitios o casa (por defecto Santa Perpètua de Mogoda). |
-| `mapStyle` | Estilo del mapa por defecto: `color`, `suave`, `noche` o `clasico`. Cada móvil puede cambiarlo en el menú. |
+| `mapStyle` | Estilo del mapa por defecto: `satelite`, `color`, `suave`, `noche` o `clasico`. Cada móvil puede cambiarlo en el menú. |
 | `sharedEmail` | Email de la cuenta compartida de Firebase. |
 | `demoPassword` | Contraseña del modo demo (solo cuenta si no hay Firebase). |
 | `initials` | Vuestras iniciales para el botón del menú, por ejemplo `'Y·A'`. Vacío = icono de tres rayas. |
@@ -139,8 +139,12 @@ se guardan en el teléfono y se sincronizan al volver la conexión.
   **+1** desde la lista, desde la ficha o desde la barra inferior; cada +1 se puede deshacer al momento.
 - En la ficha: visitas con fecha y nota (**Con otra fecha…** para apuntar una pasada), puntuación 🍣,
   notas con autoguardado, **Cómo llegar**, **Editar**, **Mover pin** y **Eliminar sitio** (con deshacer).
+- **Fotos y opiniones en Google**: en la ficha y al añadir un sitio, abre su ficha de Google Maps (fotos, opiniones,
+  horario). «Ver aquí el mapa de Google» la enseña dentro de la web. Las fotos no se pueden meter dentro de la
+  web sin la API de pago de Google, así que se abren en Google Maps.
 - Menú (botón redondo de arriba):
-  - **Mapa**: Color, Suave, Noche o Clásico. **Tema**: automático, claro u oscuro.
+  - **Mapa**: Satélite (como la vista satélite de Apple: ortofoto del IGN con nombres encima), Color, Suave, Noche
+    o Clásico. **Tema**: automático, claro u oscuro.
   - **🏠 Nuestra casa**: marcadla con el GPS o en el mapa. El mapa se abre ahí, la lista dice a qué distancia
     está cada sushi y podéis buscar sushi cerca de casa. Solo la veis vosotros (está en Firestore, no en el código).
   - **🎲 ¿Dónde vamos hoy?**: elige al azar un pendiente (o un visitado si no hay pendientes).
@@ -185,7 +189,7 @@ Añadida a la pantalla de inicio (paso 5) eso no pasa. Nada se pierde: todo est�
 (o el móvil no tiene WebGL), la web cambia sola al estilo «Clásico» de OpenStreetMap.
 
 **He subido un cambio y no lo veo.** GitHub Pages guarda los archivos 10 minutos en caché. En `index.html` hay un
-«mapa de versiones» (`?v=3`): súbelo a `v=4` en todos los módulos y en `styles.css` en cada cambio.
+«mapa de versiones» (`?v=4`): súbelo a `v=5` en todos los módulos y en `styles.css` en cada cambio.
 
 ---
 
@@ -213,6 +217,7 @@ lib/maplibre/           MapLibre GL 5.24 y su puente para Leaflet (licencias BSD
 
 ## Créditos
 
+- Satélite: ortofotos [PNOA](https://pnoa.ign.es) cedidas por el © [Instituto Geográfico Nacional](https://www.ign.es) (CC BY 4.0) y World Imagery de © [Esri](https://www.esri.com) fuera de España.
 - Mapa: [Leaflet](https://leafletjs.com), [MapLibre](https://maplibre.org) y [OpenFreeMap](https://openfreemap.org) (© [OpenMapTiles](https://openmaptiles.org)) · datos © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.
 - Búsqueda: [Photon](https://photon.komoot.io) (komoot), [Nominatim](https://nominatim.org) y [Overpass API](https://overpass-api.de), servicios comunitarios de uso justo.
 - Datos y contraseña: [Firebase](https://firebase.google.com) (plan Spark).

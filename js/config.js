@@ -21,8 +21,8 @@ export const CONFIG = {
   defaultCenter: [41.5343, 2.1836],
   defaultZoom: 14,
 
-  // Estilo del mapa por defecto: 'color', 'suave', 'noche' o 'clasico'. Se puede cambiar desde el menú.
-  mapStyle: 'color',
+  // Estilo del mapa por defecto: 'satelite', 'color', 'suave', 'noche' o 'clasico'. Se puede cambiar desde el menú.
+  mapStyle: 'satelite',
 
   // --- Contraseña (modo real, con Firebase) ---
   // Email del usuario que creas en Firebase > Authentication > Users.

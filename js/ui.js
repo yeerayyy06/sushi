@@ -23,6 +23,7 @@ export function createUI(handlers = {}) {
     'detail-counter', 'detail-count', 'detail-last', 'detail-stars', 'detail-plus-date', 'detail-visits', 'detail-visits-empty', 'detail-notes', 'detail-notes-hint',
     'detail-directions', 'detail-edit', 'detail-move', 'detail-delete', 'detail-plus',
     'new-peek-close', 'new-cancel', 'new-name', 'new-address', 'new-address-spinner', 'new-hint', 'new-dupe', 'new-dupe-open', 'new-visited', 'new-pending',
+    'new-google', 'detail-google',
     'toasts', 'demo-chip',
     'confirm-dialog', 'confirm-title', 'confirm-text', 'confirm-ok', 'confirm-cancel',
     'visit-dialog', 'visit-form', 'visit-title', 'visit-date', 'visit-note', 'visit-error', 'visit-cancel', 'visit-remove',
@@ -625,6 +626,7 @@ export function createUI(handlers = {}) {
     els.detailPeekCount.textContent = pending ? '' : `×${count}`;
     els.detailPeekPlus.textContent = pending ? 'Hemos ido' : '+1';
     els.detailDirections.href = directionsUrl(place);
+    renderGoogle(els.detailGoogle, place);
 
     els.detailStars.innerHTML = [1, 2, 3, 4, 5]
       .map((n) => `<button type="button" class="star ${place.rating >= n ? 'is-on' : ''}" data-value="${n}" role="radio" aria-checked="${place.rating === n}" aria-label="${place.rating ? `Puntuación: ${n} de 5` : 'Sin puntuar'}">🍣</button>`)
@@ -681,6 +683,7 @@ export function createUI(handlers = {}) {
   els.newDupeOpen.addEventListener('click', () => handlers.onNewDupeOpen?.());
   els.newName.addEventListener('input', () => {
     syncCandidateButtons();
+    syncCandidateGoogle();
     if (els.newName.value.trim()) els.newHint.textContent = '';
   });
   els.newName.addEventListener('keydown', (e) => {
@@ -690,14 +693,28 @@ export function createUI(handlers = {}) {
       else els.newHint.textContent = 'Ponle un nombre para guardarlo.';
     }
   });
+  let candidateSpot = null;
+  /** El bloque de Google del candidato solo tiene sentido con un nombre. */
+  const syncCandidateGoogle = debounce(() => {
+    const name = els.newName.value.trim();
+    if (!candidateSpot || !name) {
+      clearGoogle(els.newGoogle);
+      return;
+    }
+    renderGoogle(els.newGoogle, { name, address: els.newAddress.value.trim(), ...candidateSpot });
+  }, 500);
+  els.newAddress.addEventListener('input', () => syncCandidateGoogle());
+
   function syncCandidateButtons() {
     const empty = !els.newName.value.trim();
     els.newVisited.disabled = empty;
     els.newPending.disabled = empty;
   }
-  function renderCandidate({ name, address, loadingAddress = false, dupe = false, focusName = false }) {
+  function renderCandidate({ name, address, lat, lng, loadingAddress = false, dupe = false, focusName = false }) {
     els.newName.value = name || '';
     els.newAddress.value = address || '';
+    candidateSpot = Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+    syncCandidateGoogle();
     els.newAddress.placeholder = loadingAddress ? 'Buscando dirección…' : 'Sin dirección';
     els.newAddressSpinner.hidden = !loadingAddress;
     els.newHint.textContent = '';
@@ -711,6 +728,7 @@ export function createUI(handlers = {}) {
       syncCandidateButtons();
     }
     if (address != null && !els.newAddress.value) els.newAddress.value = address;
+    syncCandidateGoogle();
     if (loadingAddress != null) {
       els.newAddressSpinner.hidden = !loadingAddress;
       els.newAddress.placeholder = loadingAddress ? 'Buscando dirección…' : placeholder || 'Sin dirección';
@@ -907,6 +925,50 @@ export function createUI(handlers = {}) {
       .map((r) => `<div class="numbers__row"><dt>${escapeHtml(r.label)}</dt><dd>${escapeHtml(r.value)}${r.hint ? `<small>${escapeHtml(r.hint)}</small>` : ''}</dd></div>`)
       .join('');
     openDialog(els.statsDialog);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Ficha de Google: enlace a fotos/opiniones y, si se pide, el mapa de Google con el sitio
+  // ---------------------------------------------------------------------------
+  function googleQuery(place) {
+    return [place.name, place.address].filter(Boolean).join(', ');
+  }
+  /** Enlace oficial de Google Maps (sin clave): abre la ficha con fotos, opiniones y horario. */
+  function googleMapsUrl(place) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(googleQuery(place) || `${place.lat},${place.lng}`)}`;
+  }
+  function googleEmbedUrl(place) {
+    const q = googleQuery(place) || `${place.lat},${place.lng}`;
+    return `https://maps.google.com/maps?q=${encodeURIComponent(q)}&ll=${place.lat.toFixed(6)},${place.lng.toFixed(6)}&z=17&hl=es&output=embed`;
+  }
+  /** Pinta (o repinta) el bloque de Google para un sitio. El iframe solo se carga si se pide. */
+  function renderGoogle(container, place) {
+    const key = `${googleQuery(place)}|${place.lat.toFixed(5)},${place.lng.toFixed(5)}`;
+    if (container.dataset.key === key) return;
+    container.dataset.key = key;
+    const name = place.name ? `«${place.name}»` : 'este sitio';
+    container.innerHTML = `<a class="btn btn--outline gblock__open" href="${escapeHtml(googleMapsUrl(place))}" target="_blank" rel="noopener"><span class="gblock__g" aria-hidden="true">G</span>Fotos y opiniones en Google ↗</a><button type="button" class="textbtn gblock__toggle" aria-expanded="false">Ver aquí el mapa de Google</button><div class="gblock__frame" hidden></div>`;
+    const toggle = container.querySelector('.gblock__toggle');
+    const frame = container.querySelector('.gblock__frame');
+    toggle.addEventListener('click', () => {
+      const open = frame.hidden;
+      frame.hidden = !open;
+      toggle.setAttribute('aria-expanded', String(open));
+      toggle.textContent = open ? 'Ocultar el mapa de Google' : 'Ver aquí el mapa de Google';
+      if (open && !frame.firstChild) {
+        const iframe = document.createElement('iframe');
+        iframe.src = googleEmbedUrl(place);
+        iframe.title = `Google Maps: ${name}`;
+        iframe.loading = 'lazy';
+        iframe.referrerPolicy = 'no-referrer-when-downgrade';
+        iframe.allowFullscreen = true;
+        frame.appendChild(iframe);
+      }
+    });
+  }
+  function clearGoogle(container) {
+    container.innerHTML = '';
+    delete container.dataset.key;
   }
 
   /** Posición vertical (px) del borde visible de la hoja, para centrar cosas en la franja del mapa. */

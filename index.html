@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./lib/leaflet/leaflet.css">
-  <link rel="stylesheet" href="./css/styles.css?v=3">
+  <link rel="stylesheet" href="./css/styles.css?v=4">
   <script>
     // Tema antes del primer pintado (evita el parpadeo claro->oscuro). Preferencia: auto | light | dark.
     (function () {
@@ -89,6 +89,7 @@
         <div class="menu__row">
           <span class="menu__label">Mapa</span>
           <div class="seg" id="mapstyle-seg" role="group" aria-label="Estilo del mapa">
+            <button type="button" class="seg__btn" data-style="satelite" aria-pressed="false">Satélite</button>
             <button type="button" class="seg__btn" data-style="color" aria-pressed="false">Color</button>
             <button type="button" class="seg__btn" data-style="suave" aria-pressed="false">Suave</button>
             <button type="button" class="seg__btn" data-style="noche" aria-pressed="false">Noche</button>
@@ -217,6 +218,11 @@
             <textarea id="detail-notes" class="notes" rows="3" maxlength="2000" placeholder="Lo que no queremos olvidar de este sitio."></textarea>
           </section>
 
+          <section class="block">
+            <div class="block__head"><span class="eyebrow">En Google</span></div>
+            <div class="gblock" id="detail-google"></div>
+          </section>
+
           <div class="links">
             <a class="link" id="detail-directions" target="_blank" rel="noopener">Cómo llegar ↗</a>
             <button type="button" class="link" id="detail-edit">Editar</button>
@@ -252,6 +258,7 @@
           </div>
           <p class="hint" id="new-hint"></p>
           <p class="dupe" id="new-dupe" hidden>Ya está en el mapa. <button type="button" class="textbtn" id="new-dupe-open">Ver sitio</button></p>
+          <div class="gblock" id="new-google"></div>
         </div>
         <footer class="sheetfoot sheetfoot--2">
           <button type="button" class="btn btn--primary btn--big" id="new-visited">Ya hemos ido</button>
@@ -329,19 +336,19 @@
   </div>
 
   <script src="./lib/leaflet/leaflet.js"></script>
-  <!-- Versión de los módulos: súbela (v=3, v=4…) en cada cambio para que nadie mezcle archivos viejos y nuevos. -->
+  <!-- Versión de los módulos: súbela (v=5, v=6…) en cada cambio para que nadie mezcle archivos viejos y nuevos. -->
   <script type="importmap">
     {
       "imports": {
-        "./js/app.js": "./js/app.js?v=3",
-        "./js/auth.js": "./js/auth.js?v=3",
-        "./js/config.js": "./js/config.js?v=3",
-        "./js/firebase.js": "./js/firebase.js?v=3",
-        "./js/map.js": "./js/map.js?v=3",
-        "./js/search.js": "./js/search.js?v=3",
-        "./js/store.js": "./js/store.js?v=3",
-        "./js/ui.js": "./js/ui.js?v=3",
-        "./js/util.js": "./js/util.js?v=3"
+        "./js/app.js": "./js/app.js?v=4",
+        "./js/auth.js": "./js/auth.js?v=4",
+        "./js/config.js": "./js/config.js?v=4",
+        "./js/firebase.js": "./js/firebase.js?v=4",
+        "./js/map.js": "./js/map.js?v=4",
+        "./js/search.js": "./js/search.js?v=4",
+        "./js/store.js": "./js/store.js?v=4",
+        "./js/ui.js": "./js/ui.js?v=4",
+        "./js/util.js": "./js/util.js?v=4"
       }
     }
   </script>

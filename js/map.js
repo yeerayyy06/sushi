@@ -5,7 +5,7 @@ import { escapeHtml } from './util.js';
 const ATTR_OSM = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
 const OPENFREEMAP = 'https://tiles.openfreemap.org/styles';
 const ATTR_OFM =
-  '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> · datos &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
+  '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
 const STYLE_TIMEOUT_MS = 12000;
 
 /**
@@ -13,11 +13,120 @@ const STYLE_TIMEOUT_MS = 12000;
  * "clásico" son las teselas estándar de OpenStreetMap y es también el plan B si lo vectorial no carga.
  */
 export const MAP_STYLES = {
+  satelite: { label: 'Satélite', build: () => satelliteStyle() },
   color: { label: 'Color', vector: `${OPENFREEMAP}/liberty` },
   suave: { label: 'Suave', vector: `${OPENFREEMAP}/positron` },
   noche: { label: 'Noche', vector: `${OPENFREEMAP}/dark` },
   clasico: { label: 'Clásico', vector: null },
 };
+
+// --- Satélite -----------------------------------------------------------------------------
+// En España: ortofotos PNOA del Instituto Geográfico Nacional (las más nítidas y recientes).
+// Fuera de España (o donde PNOA devuelve una tesela en blanco): Esri World Imagery.
+// Encima, las etiquetas de OpenFreeMap en blanco, como la vista satélite de Apple.
+const IMAGERY_ATTR =
+  'PNOA &copy; <a href="https://www.ign.es/" target="_blank" rel="noopener">IGN</a> · &copy; <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>, Maxar';
+const PNOA_URL = (z, x, y) =>
+  `https://www.ign.es/wmts/pnoa-ma?request=GetTile&service=WMTS&VERSION=1.0.0&Layer=OI.OrthoimageCoverage&Style=default&Format=image/jpeg&TileMatrixSet=GoogleMapsCompatible&TileMatrix=${z}&TileRow=${y}&TileCol=${x}`;
+const ESRI_URL = (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+const SPAIN_BOXES = [
+  [-9.6, 35.8, 4.6, 44.0], // península y Baleares
+  [-18.4, 27.5, -13.2, 29.5], // Canarias
+];
+const LABEL_LAYER_RE = /^(label_|poi|highway-name|water|airport)/;
+const ROAD_LINES = new Set(['road_motorway', 'road_motorway_link', 'road_trunk_primary', 'road_secondary_tertiary', 'road_link', 'road_minor']);
+
+function tileBox(z, x, y) {
+  const n = 2 ** z;
+  const lng = (i) => (i / n) * 360 - 180;
+  const lat = (j) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * j) / n))) * 180) / Math.PI;
+  return { west: lng(x), east: lng(x + 1), north: lat(y), south: lat(y + 1) };
+}
+function touchesSpain(z, x, y) {
+  const b = tileBox(z, x, y);
+  return SPAIN_BOXES.some(([w, s, e, n]) => b.west < e && b.east > w && b.south < n && b.north > s);
+}
+/** PNOA devuelve una tesela blanca (~1 KB) fuera de su cobertura. */
+async function looksBlank(buf) {
+  if (buf.byteLength > 2500) return false;
+  try {
+    const bitmap = await createImageBitmap(new Blob([buf], { type: 'image/jpeg' }));
+    const canvas = new OffscreenCanvas(8, 8);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0, 8, 8);
+    const d = ctx.getImageData(0, 0, 8, 8).data;
+    for (let i = 0; i < d.length; i += 4) if (d[i] < 238 || d[i + 1] < 238 || d[i + 2] < 238) return false;
+    return true;
+  } catch {
+    return buf.byteLength < 1300;
+  }
+}
+
+let satProtocolReady = false;
+function registerSatelliteProtocol() {
+  if (satProtocolReady) return;
+  satProtocolReady = true;
+  window.maplibregl.addProtocol('sat', async (params, abortController) => {
+    const [z, x, y] = params.url.replace('sat://', '').split('/').map(Number);
+    const get = async (url) => {
+      const res = await fetch(url, { signal: abortController.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.arrayBuffer();
+    };
+    if (z >= 11 && touchesSpain(z, x, y)) {
+      try {
+        const buf = await get(PNOA_URL(z, x, y));
+        if (!(await looksBlank(buf))) return { data: buf };
+      } catch (err) {
+        if (err?.name === 'AbortError') throw err;
+      }
+    }
+    return { data: await get(ESRI_URL(z, x, y)) };
+  });
+}
+
+let libertyPromise = null;
+/** Estilo "satélite": imagen aérea + carreteras suaves + etiquetas blancas de OpenFreeMap. */
+async function satelliteStyle() {
+  registerSatelliteProtocol();
+  if (!libertyPromise) {
+    libertyPromise = fetch(`${OPENFREEMAP}/liberty`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .catch((err) => {
+        libertyPromise = null;
+        throw err;
+      });
+  }
+  const base = await libertyPromise;
+  const layers = [
+    { id: 'sat-background', type: 'background', paint: { 'background-color': '#0b1620' } },
+    { id: 'sat-imagery', type: 'raster', source: 'imagery', paint: { 'raster-fade-duration': 150 } },
+  ];
+  for (const layer of base.layers) {
+    if (layer.type === 'line' && ROAD_LINES.has(layer.id)) {
+      layers.push({ ...layer, paint: { ...layer.paint, 'line-opacity': 0.35 } });
+    } else if (layer.type === 'symbol' && !/one_way|_us/.test(layer.id)) {
+      const white = LABEL_LAYER_RE.test(layer.id)
+        ? { 'text-color': '#ffffff', 'text-halo-color': 'rgba(0, 0, 0, 0.75)', 'text-halo-width': 1.4, 'text-halo-blur': 0.4 }
+        : {};
+      layers.push({ ...layer, paint: { ...layer.paint, ...white } });
+    }
+  }
+  return {
+    version: 8,
+    name: 'satelite',
+    glyphs: base.glyphs,
+    sprite: base.sprite,
+    sources: {
+      openmaptiles: base.sources.openmaptiles,
+      imagery: { type: 'raster', tiles: ['sat://{z}/{x}/{y}'], tileSize: 256, maxzoom: 19 },
+    },
+    layers,
+  };
+}
 
 const MAPLIBRE_FILES = {
   css: './lib/maplibre/maplibre-gl.css',
@@ -93,6 +202,7 @@ export function createMap(container, opts) {
 
   let rasterLayer = null;
   let glLayer = null;
+  let extraAttribution = '';
   let styleKey = null;
   let styleToken = 0;
   const placeLayer = L.layerGroup().addTo(map);
@@ -169,37 +279,51 @@ export function createMap(container, opts) {
    * Cambia el estilo. El mapa clásico se queda debajo hasta que el nuevo estilo está listo,
    * así nunca se queda en blanco; si el vectorial no carga, se vuelve al clásico.
    */
+  function setExtraAttribution(text) {
+    if (text === extraAttribution) return;
+    if (extraAttribution) map.attributionControl?.removeAttribution(extraAttribution);
+    extraAttribution = text;
+    if (text) map.attributionControl?.addAttribution(text);
+  }
+
   async function setStyle(key) {
-    const def = MAP_STYLES[key] || MAP_STYLES.color;
-    styleKey = MAP_STYLES[key] ? key : 'color';
+    const def = MAP_STYLES[key] || MAP_STYLES.satelite;
+    styleKey = MAP_STYLES[key] ? key : 'satelite';
     const token = ++styleToken;
     container.dataset.mapStyle = styleKey;
     addRaster();
-    if (!def.vector) {
+    if (!def.vector && !def.build) {
       removeGl();
+      setExtraAttribution('');
       return styleKey;
     }
     try {
       await ensureMapLibre();
       if (token !== styleToken) return styleKey;
+      const style = def.build ? await def.build() : def.vector;
+      if (token !== styleToken) return styleKey;
       let ready;
       if (glLayer) {
         const glMap = glLayer.getMaplibreMap();
         ready = waitForStyle(glMap);
-        glMap.setStyle(def.vector);
+        glMap.setStyle(style);
       } else {
-        const layer = L.maplibreGL({ style: def.vector, pane: 'tilePane', attributionControl: { customAttribution: ATTR_OFM } });
+        const layer = L.maplibreGL({ style, pane: 'tilePane', attributionControl: { customAttribution: ATTR_OFM } });
         glLayer = layer;
         layer.addTo(map); // puede lanzar si el navegador no deja crear el contexto WebGL
         ready = waitForStyle(layer.getMaplibreMap());
       }
       await ready;
-      if (token === styleToken) removeRaster();
+      if (token === styleToken) {
+        removeRaster();
+        setExtraAttribution(key === 'satelite' ? IMAGERY_ATTR : '');
+      }
     } catch (err) {
       if (token !== styleToken) return styleKey;
       console.warn('Mapa vectorial no disponible, uso el clásico:', err?.message || err);
       removeGl();
       addRaster();
+      setExtraAttribution('');
       styleKey = 'clasico';
       container.dataset.mapStyle = styleKey;
       opts.onStyleFallback?.();
