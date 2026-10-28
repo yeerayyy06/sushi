@@ -6,6 +6,8 @@ const $ = (id) => document.getElementById(id);
 const THEME_COLORS = { light: '#f6f3ed', dark: '#141311' };
 const NOTE_PLACEHOLDERS = ['¿Qué pedimos?', '¿Qué tal estuvo?', '¿Repetiríamos?', '¿Quién invitó?'];
 const SUSHI_RE = /sushi|japon|nigiri|ramen|izakaya/i;
+const BURST_EMOJIS = ['🍣', '🍥', '🥢', '🍙', '✨', '🍤', '🥟'];
+const VIEW_ORDER = { list: 0, detail: 1, new: 1 };
 
 /**
  * @param {object} handlers  callbacks que la app registra (ver app.js)
@@ -77,9 +79,75 @@ export function createUI(handlers = {}) {
     setTimeout(() => els.password.focus({ preventScroll: true }), 50);
   }
   function showApp() {
+    const wasHidden = els.app.hidden;
     els.login.hidden = true;
     els.app.hidden = false;
     showSplash(false);
+    if (wasHidden && !reducedMotion.matches) {
+      els.app.classList.add('is-entering');
+      setTimeout(() => els.app.classList.remove('is-entering'), 1300);
+    }
+  }
+
+  /**
+   * Confeti de sushi saliendo de un elemento (o de un punto {x, y}).
+   * @param {Element|{x:number,y:number}} origin
+   */
+  function celebrate(origin, { count = 18, emojis = BURST_EMOJIS, power = 1 } = {}) {
+    if (reducedMotion.matches || typeof Element.prototype.animate !== 'function') return;
+    let x = window.innerWidth / 2;
+    let y = window.innerHeight / 2;
+    if (origin instanceof Element) {
+      const r = origin.getBoundingClientRect();
+      if (r.width || r.height) {
+        x = r.left + r.width / 2;
+        y = r.top + r.height / 2;
+      }
+    } else if (origin && Number.isFinite(origin.x)) {
+      ({ x, y } = origin);
+    }
+    for (let i = 0; i < count; i += 1) {
+      const el = document.createElement('span');
+      el.className = 'burst';
+      el.textContent = emojis[i % emojis.length];
+      el.style.left = `${x}px`;
+      el.style.top = `${y}px`;
+      el.style.fontSize = `${16 + Math.random() * 14}px`;
+      document.body.appendChild(el);
+      const angle = Math.random() * Math.PI * 2;
+      const dist = (60 + Math.random() * 120) * power;
+      const dx = Math.cos(angle) * dist;
+      const dy = Math.sin(angle) * dist - 70 * power;
+      const rot = (Math.random() * 2 - 1) * 320;
+      el.animate(
+        [
+          { transform: 'translate(-50%, -50%) scale(0.2) rotate(0deg)', opacity: 1 },
+          { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(1.1) rotate(${rot / 2}deg)`, opacity: 1, offset: 0.5 },
+          { transform: `translate(calc(-50% + ${dx * 1.2}px), calc(-50% + ${dy + 140 * power}px)) scale(0.7) rotate(${rot}deg)`, opacity: 0 },
+        ],
+        { duration: 900 + Math.random() * 600, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)', fill: 'forwards' },
+      ).onfinish = () => el.remove();
+    }
+  }
+
+  /** Cuenta de `from` a `to` en el texto de un elemento (para los totales). */
+  function countUp(el, from, to, ms = 700) {
+    if (reducedMotion.matches || from === to) {
+      el.textContent = String(to);
+      return;
+    }
+    const start = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - start) / ms);
+      const eased = 1 - Math.pow(1 - t, 3);
+      el.textContent = String(Math.round(from + (to - from) * eased));
+      if (t < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
+  function setAddAttention(on) {
+    els.addButton.classList.toggle('is-attention', Boolean(on) && !reducedMotion.matches);
   }
   function setLoginBusy(busy) {
     els.loginSubmit.classList.toggle('is-busy', busy);
@@ -376,8 +444,18 @@ export function createUI(handlers = {}) {
   // Panel: vistas y hoja inferior
   // ---------------------------------------------------------------------------
   function showView(name) {
+    const prev = currentView;
     currentView = name;
     for (const [key, el] of Object.entries(els.views)) el.hidden = key !== name;
+    if (prev !== name && !reducedMotion.matches) {
+      const el = els.views[name];
+      const cls = VIEW_ORDER[name] >= VIEW_ORDER[prev] ? 'is-enter-fwd' : 'is-enter-back';
+      el.classList.remove('is-enter-fwd', 'is-enter-back');
+      void el.offsetWidth;
+      el.classList.add(cls);
+      el.addEventListener('animationend', () => el.classList.remove(cls), { once: true });
+      if (name === 'list') listNeedsIntro = true;
+    }
     els.panel.dataset.view = name;
     els.panel.scrollTop = 0; // por si algún scrollIntoView del navegador movió el panel
     els.views[name].querySelector('.view__scroll')?.scrollTo({ top: 0 });
@@ -497,7 +575,7 @@ export function createUI(handlers = {}) {
     const plus = e.target.closest('.row__plus');
     if (plus) {
       e.stopPropagation();
-      handlers.onRowPlus?.(plus.dataset.id);
+      handlers.onRowPlus?.(plus.dataset.id, plus);
       return;
     }
     const main = e.target.closest('.row__main');
@@ -505,14 +583,26 @@ export function createUI(handlers = {}) {
   });
   els.emptyAction.addEventListener('click', () => handlers.onEmptyAction?.());
 
+  let lastStats = null;
   function renderStats({ places, visits, sinceYear }) {
     if (!places) {
       els.statsLine.textContent = 'Aún nada. Nuestro primer sushi está esperando.';
       els.statsLine.classList.add('is-empty');
     } else {
-      els.statsLine.innerHTML = `<b>${visits}</b> ${visits === 1 ? 'visita' : 'visitas'} · <b>${places}</b> ${places === 1 ? 'sitio' : 'sitios'}`;
+      const prev = lastStats || { places: 0, visits: 0 };
+      els.statsLine.innerHTML = `<b data-n="visits">${prev.visits}</b> ${visits === 1 ? 'visita' : 'visitas'} · <b data-n="places">${prev.places}</b> ${places === 1 ? 'sitio' : 'sitios'}`;
       els.statsLine.classList.remove('is-empty');
+      const vEl = els.statsLine.querySelector('[data-n="visits"]');
+      const pEl = els.statsLine.querySelector('[data-n="places"]');
+      countUp(vEl, prev.visits, visits, lastStats ? 400 : 900);
+      countUp(pEl, prev.places, places, lastStats ? 400 : 900);
+      if (lastStats && !reducedMotion.matches) {
+        for (const [el, changed] of [[vEl, prev.visits !== visits], [pEl, prev.places !== places]]) {
+          if (changed) el.classList.add('is-ticking');
+        }
+      }
     }
+    lastStats = { places, visits };
     els.statsSince.textContent = sinceYear ? `desde ${sinceYear}` : '';
     els.statsSince.hidden = !sinceYear;
     const title = handlers.appTitle || 'Nuestro mapa de sushi';
@@ -529,6 +619,15 @@ export function createUI(handlers = {}) {
     return parts.filter(Boolean).join(' · ');
   }
 
+  let lastTab = null;
+  let lastRowIds = null;
+  let listNeedsIntro = true;
+  function resetListIntro() {
+    lastTab = null;
+    lastRowIds = null;
+    listNeedsIntro = true;
+    lastStats = null;
+  }
   function renderList({ visited, pending, tab, selectedId, favId, home }) {
     els.tabVisited.classList.toggle('is-active', tab === 'visited');
     els.tabPending.classList.toggle('is-active', tab === 'pending');
@@ -554,6 +653,21 @@ export function createUI(handlers = {}) {
         return `<li class="row ${p.id === selectedId ? 'is-selected' : ''}" data-id="${escapeHtml(p.id)}"><button type="button" class="row__main" data-id="${escapeHtml(p.id)}"><span class="row__text">${fav ? '<span class="eyebrow eyebrow--fav">el de siempre</span>' : ''}<span class="row__name">${escapeHtml(p.name)}</span><span class="row__meta">${escapeHtml(rowMeta(p, home))}</span></span>${right}</button>${action}</li>`;
       })
       .join('');
+
+    if (!reducedMotion.matches) {
+      const intro = listNeedsIntro || tab !== lastTab;
+      els.rows.querySelectorAll('.row').forEach((row, i) => {
+        if (intro) {
+          row.classList.add('is-enter');
+          row.style.setProperty('--i', String(Math.min(i, 14)));
+        } else if (lastRowIds && !lastRowIds.has(row.dataset.id)) {
+          row.classList.add('is-new');
+        }
+      });
+    }
+    listNeedsIntro = false;
+    lastTab = tab;
+    lastRowIds = new Set(list.map((p) => p.id));
 
     const empty = !list.length;
     els.empty.hidden = !empty;
@@ -996,6 +1110,9 @@ export function createUI(handlers = {}) {
     setMenuOpen,
     setMenuFooter,
     setNearbyState,
+    celebrate,
+    setAddAttention,
+    resetListIntro,
     setMapStyleUI,
     actionSheet,
     showStats,

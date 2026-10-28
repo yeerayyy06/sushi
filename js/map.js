@@ -197,7 +197,9 @@ export function createMap(container, opts) {
     minZoom: 2,
     maxZoom: 20,
   });
-  L.control.attribution({ position: 'bottomleft', prefix: false }).addTo(map);
+  L.control.attribution({ position: 'bottomleft', prefix: false })
+    .addAttribution('Sitios &copy; <a href="https://overturemaps.org" target="_blank" rel="noopener">Overture Maps</a>')
+    .addTo(map);
   L.control.zoom({ position: 'bottomright' }).addTo(map);
 
   let rasterLayer = null;
@@ -214,6 +216,21 @@ export function createMap(container, opts) {
   let userMarker = null;
   let selectedId = null;
   let placesById = new Map();
+  let placesShown = false; // el primer lote aparece escalonado; los siguientes "caen" con rebote
+  const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /** Animación de entrada para el marcador recién creado. */
+  function animateMarker(marker, cls, delayMs = 0) {
+    if (reduceMotion) return;
+    const el = marker.getElement()?.querySelector('.pin');
+    if (!el) return;
+    el.style.animationDelay = `${delayMs}ms`;
+    el.classList.add(cls);
+    el.addEventListener('animationend', () => {
+      el.classList.remove(cls);
+      el.style.animationDelay = '';
+    }, { once: true });
+  }
 
   map.on('contextmenu', (e) => {
     L.DomEvent.stop(e.originalEvent || e);
@@ -365,11 +382,20 @@ export function createMap(container, opts) {
   }
 
   // --- sitios ------------------------------------------------------------------------
-  function signatureOf(place, selected) {
-    return [place.status, place.visits.length, place.name, place.lat, place.lng, selected ? 1 : 0].join('|');
+  // La firma no incluye la selección: seleccionar solo cambia una clase (así no se cortan las animaciones).
+  function signatureOf(place) {
+    return [place.status, place.visits.length, place.name, place.lat, place.lng].join('|');
+  }
+  function applySelection(entry, place, selected) {
+    entry.marker.getElement()?.querySelector('.pin')?.classList.toggle('is-selected', selected);
+    entry.marker.setZIndexOffset(selected ? 1000 : place.status === 'visited' ? 100 : 0);
   }
 
   function setPlaces(places) {
+    // El primer lote (lo que ya teníais guardado) aparece escalonado; lo que se añade después, cae.
+    const firstBatch = !placesShown;
+    placesShown = true;
+    let created = 0;
     placesById = new Map(places.map((p) => [p.id, p]));
     for (const [id, entry] of markers) {
       if (!placesById.has(id)) {
@@ -379,7 +405,7 @@ export function createMap(container, opts) {
     }
     for (const place of places) {
       const selected = place.id === selectedId;
-      const signature = signatureOf(place, selected);
+      const signature = signatureOf(place);
       const entry = markers.get(place.id);
       if (entry && entry.signature === signature) continue;
       if (entry) {
@@ -404,7 +430,14 @@ export function createMap(container, opts) {
       if (!coarsePointer) marker.bindTooltip(escapeHtml(place.name), { direction: 'top', className: 'pin-tip', offset: [0, -4] });
       marker.addTo(placeLayer);
       markers.set(place.id, { marker, signature });
+      if (firstBatch) animateMarker(marker, 'is-enter', Math.min(created * 45, 900));
+      else animateMarker(marker, 'is-drop');
+      created += 1;
     }
+  }
+  /** Al cerrar sesión: el próximo lote vuelve a aparecer escalonado. */
+  function resetIntro() {
+    placesShown = false;
   }
 
   function select(id) {
@@ -414,12 +447,7 @@ export function createMap(container, opts) {
     for (const pid of [prev, id]) {
       const place = pid && placesById.get(pid);
       const entry = pid && markers.get(pid);
-      if (place && entry) {
-        const selected = pid === selectedId;
-        entry.marker.setIcon(placeIcon(place, selected));
-        entry.marker.setZIndexOffset(selected ? 1000 : place.status === 'visited' ? 100 : 0);
-        entry.signature = signatureOf(place, selected);
-      }
+      if (place && entry) applySelection(entry, place, pid === selectedId);
     }
   }
 
@@ -441,6 +469,7 @@ export function createMap(container, opts) {
     });
     homeMarker.bindTooltip('Nuestra casa', { direction: 'top', className: 'pin-tip', offset: [0, -4] });
     homeMarker.addTo(map);
+    animateMarker(homeMarker, 'is-drop', 150);
   }
 
   // --- sugerencias -------------------------------------------------------------------------
@@ -453,6 +482,7 @@ export function createMap(container, opts) {
       }
     }
     const labelled = list.filter((s) => s.tier !== 'other').length <= 30;
+    let appeared = 0;
     for (const s of list) {
       const signature = `${s.tier}|${s.name}`;
       const existing = suggestionMarkers.get(s.id);
@@ -470,6 +500,8 @@ export function createMap(container, opts) {
       }
       marker.addTo(suggestionLayer);
       suggestionMarkers.set(s.id, { marker, signature });
+      animateMarker(marker, 'is-enter', Math.min(appeared * 60, 900));
+      appeared += 1;
     }
   }
   function clearSuggestions() {
@@ -582,6 +614,7 @@ export function createMap(container, opts) {
     setStyle,
     getStyle: () => styleKey,
     setPlaces,
+    resetIntro,
     select,
     setHome,
     setSuggestions,

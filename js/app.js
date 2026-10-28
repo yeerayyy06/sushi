@@ -89,9 +89,9 @@ const ui = createUI({
     renderList();
   },
   onRowClick: (id) => openPlace(id),
-  onRowPlus: (id) => {
+  onRowPlus: (id, button) => {
     const place = placeById(id);
-    if (place) addVisitTo(place);
+    if (place) addVisitTo(place, { origin: button });
   },
   onEmptyAction: () => enterCrosshair({ mode: 'new' }),
   onDetailBack: () => closeDetail(),
@@ -99,7 +99,7 @@ const ui = createUI({
   onDetailMove: movePlace,
   onPlus: () => {
     const place = placeById(state.selectedId);
-    if (place) addVisitTo(place);
+    if (place) addVisitTo(place, { origin: ui.getSheet() === 'peek' ? ui.els.detailPeekPlus : ui.els.detailPlus });
   },
   onPlusWithDate: addVisitWithDate,
   onRating: setRating,
@@ -165,7 +165,9 @@ function showLogin() {
   state.candidate = null;
   state.crosshair = null;
   state.totalVisits = null;
+  ui.resetListIntro();
   if (map) {
+    map.resetIntro();
     map.setPlaces([]);
     map.setHome(null);
     map.setDraft(null);
@@ -281,6 +283,7 @@ function onPlaces(allPlaces) {
   }
 
   map.setPlaces(places);
+  ui.setAddAttention(places.length === 0);
   ui.renderStats({ places: places.length, visits: total, sinceYear });
   renderList();
 
@@ -389,7 +392,7 @@ function closeDetail({ silent = false, fromHistory = false, keepHistory = false 
   renderList();
 }
 
-function addVisitTo(place, { date = todayISO(), note = '' } = {}) {
+function addVisitTo(place, { date = todayISO(), note = '', origin = null } = {}) {
   const visit = { id: randomId(), date, note };
   const wasPending = place.status === STATUS.PENDING;
   const n = place.visits.length + 1; // antes de escribir: el almacén local actualiza al instante
@@ -402,6 +405,8 @@ function addVisitTo(place, { date = todayISO(), note = '' } = {}) {
   navigator.vibrate?.(8);
 
   const text = MILESTONES[total] || (wasPending ? '¡Por fin! Primera visita apuntada.' : `Visita apuntada · ×${n}`);
+  if (MILESTONES[total]) ui.celebrate(origin, { count: 44, power: 1.5 });
+  else ui.celebrate(origin, { count: wasPending ? 24 : 14 });
   ui.toast(text, {
     action: 'Deshacer',
     onAction: () => {
@@ -416,7 +421,7 @@ async function addVisitWithDate() {
   if (!place) return;
   const value = await ui.visitDialog({ title: 'Nueva visita' });
   if (!value || value.remove) return;
-  addVisitTo(place, value);
+  addVisitTo(place, { ...value, origin: ui.els.detailPlusDate });
 }
 
 async function editVisit(visitId) {
@@ -603,11 +608,13 @@ function saveCandidate(status, form) {
   result.done.catch(reportError);
   abort('reverseAbort');
   const isFirst = state.places.filter((p) => p.id !== result.id).length === 0;
+  const button = visited ? ui.els.newVisited : ui.els.newPending;
+  if (visited) ui.celebrate(button, { count: isFirst ? 48 : 30, power: isFirst ? 1.6 : 1.2 });
+  else ui.celebrate(button, { count: 10, emojis: ['🥢', '📌', '✨'], power: 0.8 });
   state.candidate = null;
   map.setDraft(null);
   if (c.osm) removeSuggestion(c.osm);
   navigator.vibrate?.(8);
-  setTimeout(() => map.pop(result.id), 80);
 
   if (visited) {
     state.highlightVisitId = visit.id;
@@ -1142,7 +1149,10 @@ function saveHome(latlng, { quiet = false } = {}) {
         .add({ name: 'Nuestra casa', address: '', lat: latlng.lat, lng: latlng.lng, status: STATUS.PENDING, visits: [], osm: HOME_OSM })
         .done.catch(reportError);
     }
-    if (!quiet) ui.toast('Casa guardada 🏠');
+    if (!quiet) {
+      ui.toast('Casa guardada 🏠');
+      ui.celebrate(null, { count: 12, emojis: ['🏠', '✨', '💛'], power: 0.9 });
+    }
   } catch (err) {
     reportError(err);
   }
@@ -1166,6 +1176,7 @@ function pickRandom(previousId = null) {
   const options = pool.length > 1 ? pool.filter((p) => p.id !== previousId) : pool;
   const place = options[Math.floor(Math.random() * options.length)];
   openPlace(place.id);
+  ui.celebrate(null, { count: 10, emojis: ['🎲', '🍣', '✨'], power: 0.8 });
   const where = state.home ? ` (${fromHome(place)})` : '';
   ui.toast(state.pending.length ? `¿Y si hoy probamos ${place.name}${where}?` : `¿Repetimos en ${place.name}${where}?`, {
     duration: 8000,

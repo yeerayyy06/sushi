@@ -1,4 +1,6 @@
 // Búsqueda de sitios. Todo sin API keys y llamado desde el navegador:
+//   - data/sushis-es.json: los restaurantes de sushi, japoneses y asiáticos de España sacados de Overture Maps
+//     (Meta, Microsoft, Foursquare…). Tiene muchos sitios que OpenStreetMap no conoce. Se carga una sola vez.
 //   - Photon (komoot): buscador sobre OpenStreetMap que permite "mientras escribes". A veces bloquea redes
 //     concretas; si falla, se deja de usar un rato y se pasa a Nominatim.
 //   - Nominatim (OSM): buscador de reserva (solo al pulsar Intro, como pide su política: máx. 1 petición/s),
@@ -17,6 +19,10 @@ const AREA_TYPES = new Set(['country', 'state', 'county', 'city', 'district', 'l
 const DISCOVER_TERMS = ['sushi', 'japon', 'japo', 'wok'];
 const PHOTON_DOWN_KEY = 'sushimap:photon-down-until';
 const PHOTON_RETRY_MS = 30 * 60 * 1000;
+const LOCAL_KM = 60; // los restaurantes se buscan solo en esta distancia alrededor del mapa
+const MAX_FOOD_KM = 100; // y nunca se enseñan más lejos que esto (nada de sushis de otros países)
+const DATASET_URL = './data/sushis-es.json';
+const TYPE_CUISINE = { s: 'sushi', j: 'japanese', a: 'asian', o: '' };
 const NOMINATIM_GAP_MS = 1100;
 
 /** Palabras que no ayudan a encontrar un sitio concreto ("koyo sushi" -> "koyo"). */
@@ -143,6 +149,76 @@ function nominatim(path, params, { signal, timeoutMs = 9000 } = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Base de datos propia (Overture Maps)
+// ---------------------------------------------------------------------------
+let datasetPromise = null;
+/** Carga data/sushis-es.json una vez. Devuelve [] si no se puede (la web sigue funcionando sin él). */
+export function loadDataset() {
+  if (!datasetPromise) {
+    datasetPromise = fetchJson(DATASET_URL, { timeoutMs: 20000 })
+      .then((json) =>
+        (json.places || []).map(([name, lat, lng, address, type, confidence, web]) => ({
+          id: `ov:${lat},${lng}`,
+          osm: `ov:${lat},${lng}`,
+          name,
+          address: address || '',
+          lat,
+          lng,
+          kind: 'food',
+          cuisine: TYPE_CUISINE[type] ?? '',
+          confidence: confidence ?? 1,
+          web: web || '',
+          norm: normalize(name),
+        })),
+      )
+      .catch((err) => {
+        console.warn('No se ha podido cargar la lista de sushis:', err?.message || err);
+        datasetPromise = null;
+        return [];
+      });
+  }
+  return datasetPromise;
+}
+
+const inBox = (r, b) => r.lat >= b.south && r.lat <= b.north && r.lng >= b.west && r.lng <= b.east;
+
+/**
+ * Busca en la base de datos propia. Con un nombre ("sushi hand") busca por nombre; con palabras genéricas
+ * ("sushi", "japonés") devuelve los más cercanos de ese tipo.
+ */
+async function searchDataset(query, near) {
+  const data = await loadDataset();
+  if (!data.length) return [];
+  const words = normalize(query).split(/\s+/).filter(Boolean);
+  const specific = words.filter((w) => !GENERIC_WORDS.has(w));
+  const box = near ? boxAround(near, LOCAL_KM) : null;
+  let hits;
+  if (specific.length) {
+    // todas las palabras "de verdad" tienen que estar en el nombre
+    hits = data.filter((r) => specific.every((w) => r.norm.includes(w)));
+    // si además pone "sushi" y hay alguno que lo cumpla, mejor esos
+    const withAll = hits.filter((r) => words.every((w) => r.norm.includes(w) || GENERIC_WORDS.has(w)));
+    if (withAll.length) hits = withAll;
+  } else {
+    const wantsAsian = words.some((w) => /asiatic|wok/.test(w));
+    hits = data.filter((r) => (box ? inBox(r, box) : true) && (wantsAsian ? true : r.cuisine === 'sushi' || r.cuisine === 'japanese'));
+  }
+  if (near) {
+    hits = hits
+      .map((r) => ({ ...r, distance: distanceMeters(near, r) }))
+      .filter((r) => r.distance <= (specific.length ? MAX_FOOD_KM * 1000 * 3 : LOCAL_KM * 1000))
+      .sort((a, b) => a.distance - b.distance);
+  }
+  return hits.slice(0, 12);
+}
+
+/** Los de la base de datos propia dentro de una zona. */
+async function datasetInArea(box) {
+  const data = await loadDataset();
+  return data.filter((r) => inBox(r, box));
+}
+
+// ---------------------------------------------------------------------------
 // Conversión a un formato común:
 //   { id, osm, name, address, lat, lng, kind: 'food'|'shop'|'area'|'street'|'address'|'place', cuisine, extent }
 // ---------------------------------------------------------------------------
@@ -249,9 +325,22 @@ async function photonSearch(query, { near, zoom, limit, signal }) {
     base.set('zoom', String(Math.min(16, Math.max(10, Math.round(Number.isFinite(zoom) ? zoom : 13)))));
     base.set('location_bias_scale', '0.2');
   }
-  const food = new URLSearchParams(base);
+  // Restaurantes y calles: solo cerca. Ciudades: en cualquier sitio (para poder mover el mapa).
+  const local = new URLSearchParams(base);
+  if (near) {
+    const b = boxAround(near, LOCAL_KM);
+    local.set('bbox', [b.west, b.south, b.east, b.north].map((n) => n.toFixed(4)).join(','));
+  }
+  const food = new URLSearchParams(local);
   FOOD_TAGS.forEach((t) => food.append('osm_tag', t));
-  const requests = [fetchJson(`${PHOTON}/api/?${food}`, { signal }), fetchJson(`${PHOTON}/api/?${base}`, { signal })];
+  const areas = new URLSearchParams(base);
+  areas.set('limit', '3');
+  ['city', 'district', 'locality', 'county', 'state'].forEach((l) => areas.append('layer', l));
+  const requests = [
+    fetchJson(`${PHOTON}/api/?${food}`, { signal }),
+    fetchJson(`${PHOTON}/api/?${local}`, { signal }),
+    fetchJson(`${PHOTON}/api/?${areas}`, { signal }),
+  ];
   const stripped = stripGeneric(query);
   if (stripped.length >= 3 && stripped !== query) {
     const foodStripped = new URLSearchParams(food);
@@ -282,8 +371,11 @@ async function nominatimSearch(query, { near, signal }) {
       out.push(...(await nominatim('search', { ...params, q: stripped, limit: '10', viewbox: box, bounded: '1' }, { signal })));
     }
   }
-  // 3) en cualquier sitio, para ciudades lejanas o si de cerca no hay nada
-  if (out.length < 4) out.push(...(await nominatim('search', { ...params, q: query, limit: '8' }, { signal })));
+  // 3) en cualquier sitio, pero solo ciudades y regiones (para mover el mapa); nunca restaurantes lejanos
+  if (out.length < 4) {
+    const global = (await nominatim('search', { ...params, q: query, limit: '8' }, { signal })).map(nominatimToResult);
+    return [...out.map(nominatimToResult), ...global.filter((r) => r.kind === 'area')];
+  }
   return out.map(nominatimToResult);
 }
 
@@ -315,16 +407,25 @@ export async function searchPlaces(q, { near, zoom, limit = 8, signal } = {}) {
     remember(key, raw);
   }
 
+  const own = await searchDataset(query, near);
   const seen = new Set();
   const food = [];
   const other = [];
-  for (const r of raw) {
+  const isTwin = (r) => food.some((f) => normalize(f.name) === normalize(r.name) && distanceMeters(f, r) < 120);
+  for (const r of [...own, ...raw]) {
     if (!validCoords(r) || seen.has(r.id)) continue;
     seen.add(r.id);
     const item = near ? { ...r, distance: distanceMeters(near, r) } : { ...r };
-    (item.kind === 'food' || item.kind === 'shop' ? food : other).push(item);
+    const isFood = item.kind === 'food' || item.kind === 'shop';
+    // Nada de restaurantes ni calles de la otra punta del mundo: solo las ciudades pueden estar lejos.
+    if (near && item.kind !== 'area' && item.distance > MAX_FOOD_KM * 1000 && !own.includes(r)) continue;
+    if (isFood && isTwin(item)) continue;
+    (isFood ? food : other).push(item);
   }
-  if (near) food.sort((a, b) => a.distance - b.distance);
+  // Con un nombre concreto ("sushi hand"), primero los que lo contienen; después, por cercanía.
+  const specific = normalize(query).split(/\s+/).filter((w) => w && !GENERIC_WORDS.has(w));
+  const matches = (r) => (specific.length && specific.every((w) => normalize(r.name).includes(w)) ? 0 : 1);
+  food.sort((a, b) => matches(a) - matches(b) || (near ? a.distance - b.distance : 0));
   return [...food.slice(0, limit), ...other.slice(0, 4)];
 }
 
@@ -455,6 +556,10 @@ export async function discoverSushi(center, bounds, { signal, onProgress } = {})
     }
   };
 
+  // La base propia responde al momento y sin red.
+  add((await datasetInArea(box)).map((r) => ({ ...r, cuisine: r.cuisine || 'sushi' })));
+  report();
+
   const tasks = [
     (async () => {
       await structured('sushi', box);
@@ -512,6 +617,14 @@ export async function findPlaceAt(lat, lng, { radius = 80, signal } = {}) {
   const here = { lat, lng };
   const box = viewbox(boxAround(here, 0.15));
   let nearest = null;
+  for (const r of await datasetInArea(boxAround(here, 0.2))) {
+    const d = distanceMeters(here, r);
+    if (d <= radius && (!nearest || d < nearest.distance)) nearest = { ...r, distance: d };
+  }
+  if (nearest && nearest.distance < 40) {
+    const address = nearest.address || (await reverseGeocode(lat, lng, { signal })).address;
+    return { name: nearest.name, address, osm: nearest.osm, lat: nearest.lat, lng: nearest.lng, web: nearest.web, found: true };
+  }
   try {
     for (const amenity of ['restaurant', 'fast_food']) {
       const list = await nominatim('search', { amenity, limit: '20', addressdetails: '1', extratags: '1', bounded: '1', viewbox: box }, { signal });

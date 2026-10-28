@@ -20,6 +20,7 @@ habéis repetido en cada uno, y los que tenéis pendientes de probar.
 | La web (HTML/CSS/JS, sin frameworks ni build) | Este repo, publicado con **GitHub Pages** | 0 € |
 | La contraseña y los datos compartidos | **Firebase**: Authentication (email + contraseña) y Firestore (base de datos) | 0 € (plan Spark) |
 | Mapa y buscador | Ortofotos PNOA del IGN y Esri (satélite), OpenFreeMap, OpenStreetMap, Photon y Nominatim | 0 € (sin registro) |
+| Lista de sushis de España | `data/sushis-es.json`, sacada de Overture Maps (datos abiertos de Meta, Microsoft, Foursquare…) | 0 € (va dentro de la web) |
 
 Una web estática no puede guardar nada por sí sola ni esconder una contraseña (todo su código es público),
 así que la contraseña «de verdad» la comprueba Firebase y los datos se guardan en Firestore, protegidos
@@ -173,9 +174,21 @@ una sola cuenta.
 responde, la web usa Nominatim durante media hora, y Nominatim solo permite buscar al pulsar Intro (o «Buscar» en
 el teclado del móvil). Con datos móviles suele ir el rápido.
 
-**¿Por qué no sale un restaurante que existe?** Los datos vienen de OpenStreetMap, que no tiene todos los locales
-(o los tiene con otro nombre: «Koyo» en vez de «Koyo Sushi»). Prueba con una sola palabra del nombre o usa
-«Añadir «…» a mano en el mapa».
+**¿Por qué no sale un restaurante que existe?** La web busca en dos sitios: su propia lista de ~5.700 sushis,
+japoneses y asiáticos de España (sacada de Overture Maps, que tiene muchos locales que OpenStreetMap no conoce,
+como Sushi Hand Terrassa) y OpenStreetMap. Si aun así no sale, prueba con una sola palabra del nombre o usa
+«Añadir «…» a mano en el mapa». Los restaurantes solo se buscan cerca de donde está el mapa (60 km), nunca en
+otros países: para buscar en otra ciudad, escribe primero la ciudad y luego el restaurante.
+
+**¿Cómo actualizo la lista de sushis?** Overture publica datos nuevos cada mes. Con Python instalado:
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install duckdb
+.venv/bin/python tools/actualizar_sushis.py
+git add data/sushis-es.json && git commit -m "Actualizar sushis" && git push
+```
+
+Tarda unos 15 minutos (descarga solo la parte de España).
 
 **¿Copia de seguridad?** Menú → *Descargar copia (JSON)* descarga un archivo con todo. Se puede importar en otra
 instalación (o si algún día cambias de backend). Conviene bajarse una de vez en cuando.
@@ -212,6 +225,8 @@ manifest.webmanifest    Para instalarla como app
 icons/                  Iconos de la app
 lib/leaflet/            Leaflet 1.9.4 (licencia BSD-2, incluida)
 lib/maplibre/           MapLibre GL 5.24 y su puente para Leaflet (licencias BSD, incluidas)
+data/sushis-es.json     Sushis, japoneses y asiáticos de España (Overture Maps)
+tools/                  Script para actualizar esa lista
 .nojekyll               Le dice a GitHub Pages que publique los archivos tal cual
 ```
 
@@ -219,5 +234,6 @@ lib/maplibre/           MapLibre GL 5.24 y su puente para Leaflet (licencias BSD
 
 - Satélite: ortofotos [PNOA](https://pnoa.ign.es) cedidas por el © [Instituto Geográfico Nacional](https://www.ign.es) (CC BY 4.0) y World Imagery de © [Esri](https://www.esri.com) fuera de España.
 - Mapa: [Leaflet](https://leafletjs.com), [MapLibre](https://maplibre.org) y [OpenFreeMap](https://openfreemap.org) (© [OpenMapTiles](https://openmaptiles.org)) · datos © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.
+- Lista de restaurantes: © [Overture Maps Foundation](https://overturemaps.org) (CDLA Permissive 2.0 / ODbL según la fuente).
 - Búsqueda: [Photon](https://photon.komoot.io) (komoot), [Nominatim](https://nominatim.org) y [Overpass API](https://overpass-api.de), servicios comunitarios de uso justo.
 - Datos y contraseña: [Firebase](https://firebase.google.com) (plan Spark).
