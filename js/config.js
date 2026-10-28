@@ -25,7 +25,7 @@ export const CONFIG = {
   // Email del usuario que creas en Firebase > Authentication > Users.
   // No hace falta que exista de verdad: solo es el identificador de la cuenta compartida.
   // La contraseña es la que pongas al crear ese usuario.
-  sharedEmail: '',
+  sharedEmail: 'nosotros@example.com',
 
   // --- Modo demo (sin Firebase) ---
   // Si no rellenas `firebase` más abajo, la web funciona en modo demo:
@@ -36,12 +36,12 @@ export const CONFIG = {
   // Pega aquí el objeto firebaseConfig de la consola:
   // Configuración del proyecto > General > Tus apps > (app web) > SDK setup and configuration > Config
   firebase: {
-    apiKey: '',
-    authDomain: '',
-    projectId: '',
-    storageBucket: '',
-    messagingSenderId: '',
-    appId: '',
+    apiKey: 'AIzaSyAdB6IEC9q8HW_2zPfqe2BS-Uf7Jzavrcc',
+    authDomain: 'mapa-sushi-fcb22.firebaseapp.com',
+    projectId: 'mapa-sushi-fcb22',
+    storageBucket: 'mapa-sushi-fcb22.firebasestorage.app',
+    messagingSenderId: '455968960284',
+    appId: '1:455968960284:web:19c0d600a899e5bf5d94d9',
   },
 
   // --- Mapa base (opcional) ---
