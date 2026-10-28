@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff8a65"/>
+      <stop offset="1" stop-color="#e8505b"/>
+    </linearGradient>
+    <linearGradient id="fish" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffab76"/>
+      <stop offset="1" stop-color="#f26b4e"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- rice -->
+  <ellipse cx="256" cy="318" rx="150" ry="72" fill="#fff8f0"/>
+  <ellipse cx="256" cy="310" rx="150" ry="72" fill="#ffffff"/>
+  <!-- rice grains -->
+  <g fill="#f1e8dc">
+    <ellipse cx="180" cy="330" rx="9" ry="5" transform="rotate(-20 180 330)"/>
+    <ellipse cx="230" cy="350" rx="9" ry="5" transform="rotate(15 230 350)"/>
+    <ellipse cx="300" cy="352" rx="9" ry="5" transform="rotate(-10 300 352)"/>
+    <ellipse cx="345" cy="332" rx="9" ry="5" transform="rotate(25 345 332)"/>
+  </g>
+  <!-- salmon -->
+  <path d="M96 268 C120 196 392 196 416 268 C392 300 120 300 96 268 Z" fill="url(#fish)"/>
+  <g stroke="#ffe3d1" stroke-width="10" stroke-linecap="round" fill="none" opacity="0.9">
+    <path d="M150 224 C200 240 230 262 250 292"/>
+    <path d="M214 212 C256 232 286 254 306 290"/>
+    <path d="M286 212 C330 232 356 250 372 280"/>
+  </g>
+  <!-- nori band -->
+  <path d="M232 196 C244 240 244 310 232 382 L280 382 C268 310 268 240 280 196 Z" fill="#2f3b37"/>
+  <!-- shine -->
+  <ellipse cx="196" cy="236" rx="34" ry="12" fill="#ffffff" opacity="0.35"/>
+</svg>

@@ -1,0 +1,66 @@
+rules_version = '2';
+
+// Reglas de seguridad de Cloud Firestore para el mapa de sushi.
+// Pégalas en Firebase Console > Firestore Database > Reglas > Publicar.
+//
+// Resumen: SOLO la cuenta compartida (identificada por su UID) puede leer y escribir,
+// y únicamente en la colección "places", con datos del tipo y tamaño esperados.
+//
+// IMPORTANTE: sustituye PEGA_AQUI_EL_UID por el "User UID" del usuario que creaste en
+// Firebase Console > Authentication > Users (es una cadena larga, p. ej. "k3J9x...").
+// Si en vez del UID prefieres usar el email, cambia la función signedIn() por:
+//   return request.auth != null && request.auth.token.email == 'tu-email@ejemplo.com';
+//
+// ¿Por qué no basta con "request.auth != null"? Porque con el proveedor Email/Contraseña
+// activado, cualquiera que vea la configuración pública de Firebase podría crearse una
+// cuenta y pasaría a estar "autenticado". Atando las reglas a vuestro UID, esa cuenta no sirve de nada.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null && request.auth.uid == 'PEGA_AQUI_EL_UID';
+    }
+
+    function isText(value, max) {
+      return value is string && value.size() <= max;
+    }
+
+    function isVisit(v) {
+      return v is map
+        && v.keys().hasOnly(['id', 'date', 'note'])
+        && isText(v.id, 40)
+        && v.date is string && v.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && isText(v.note, 300);
+    }
+
+    function validPlace(d) {
+      return d.keys().hasOnly(['name', 'address', 'notes', 'lat', 'lng', 'status', 'rating', 'visits', 'osm', 'createdAt', 'updatedAt'])
+        && isText(d.name, 120) && d.name.size() > 0
+        && isText(d.address, 300)
+        && isText(d.notes, 2000)
+        && d.lat is number && d.lat >= -90 && d.lat <= 90
+        && d.lng is number && d.lng >= -180 && d.lng <= 180
+        && d.status in ['visited', 'pending']
+        && d.rating is int && d.rating >= 0 && d.rating <= 5
+        && d.visits is list && d.visits.size() <= 500
+        && (d.visits.size() == 0 || isVisit(d.visits[d.visits.size() - 1]))
+        && isText(d.osm, 60)
+        && d.createdAt is timestamp
+        && d.updatedAt is timestamp;
+    }
+
+    match /places/{placeId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && validPlace(request.resource.data);
+      allow update: if signedIn() && validPlace(request.resource.data)
+                    && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if signedIn();
+    }
+
+    // Cualquier otra colección: nadie.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
