@@ -1,5 +1,6 @@
 // Interfaz: pinta el DOM y avisa a la app de lo que hace la persona. No sabe nada de Firebase ni del mapa.
-import { escapeHtml, formatShort, relativeDate, plural, formatDistance, todayISO, debounce } from './util.js';
+import { escapeHtml, formatShort, relativeDate, plural, formatDistance, todayISO, debounce, distanceMeters } from './util.js';
+import { cuisineLabel } from './search.js';
 
 const $ = (id) => document.getElementById(id);
 const THEME_COLORS = { light: '#f6f3ed', dark: '#141311' };
@@ -14,7 +15,8 @@ export function createUI(handlers = {}) {
     'splash', 'splash-text', 'login', 'login-form', 'login-title', 'login-subtitle', 'login-username', 'login-error', 'login-demo', 'login-bye',
     'login-dedication', 'login-submit', 'password', 'toggle-password', 'app', 'wordmark', 'menu-button', 'menu-monogram', 'menu-bars',
     'search-form', 'search-input', 'search-clear', 'search-results', 'menu', 'theme-seg', 'menu-footer', 'import-file',
-    'fabs', 'nearby-button', 'nearby-label', 'locate-button', 'crosshair', 'crosshair-text', 'crosshair-confirm', 'crosshair-cancel',
+    'fabs', 'add-button', 'nearby-button', 'nearby-label', 'locate-button', 'mapstyle-seg',
+    'actions-dialog', 'actions-title', 'actions-text', 'actions-list', 'actions-cancel', 'stats-dialog', 'stats-body', 'crosshair', 'crosshair-text', 'crosshair-confirm', 'crosshair-cancel',
     'panel', 'panel-grip', 'panel-handle', 'view-list', 'view-detail', 'view-new',
     'stats-line', 'stats-since', 'offline', 'tab-visited', 'tab-pending', 'count-visited', 'count-pending', 'rows', 'empty', 'empty-title', 'empty-text', 'empty-action',
     'detail-peek', 'detail-peek-close', 'detail-peek-name', 'detail-peek-count', 'detail-peek-plus', 'detail-back', 'detail-fav', 'detail-name', 'detail-address',
@@ -146,6 +148,14 @@ export function createUI(handlers = {}) {
     if (btn) setThemePref(btn.dataset.theme);
   });
 
+  els.mapstyleSeg.addEventListener('click', (e) => {
+    const btn = e.target.closest('.seg__btn');
+    if (btn) handlers.onMapStyle?.(btn.dataset.style);
+  });
+  function setMapStyleUI(key) {
+    els.mapstyleSeg.querySelectorAll('.seg__btn').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.style === key)));
+  }
+
   function setBranding({ title, initials }) {
     els.wordmark.textContent = title;
     const mono = String(initials || '').trim();
@@ -200,7 +210,7 @@ export function createUI(handlers = {}) {
     const action = e.target.closest('.results__action');
     if (action) {
       hideResults();
-      handlers.onSearchAction?.();
+      handlers.onSearchAction?.(action.dataset.query || '');
       return;
     }
     const btn = e.target.closest('.results__item');
@@ -236,8 +246,9 @@ export function createUI(handlers = {}) {
       meta = p.status === 'pending' ? 'Pendiente' : `×${p.visits.length}${p.visits[0] ? ` · ${formatShort(p.visits[0].date)}` : ''}`;
     } else if (item.kind === 'food' || item.kind === 'shop') {
       icon = '<span class="results__icon">R</span>';
-      meta = [item.address, item.distance != null && item.distance < 50000 ? formatDistance(item.distance) : ''].filter(Boolean).join(' · ');
-      if (SUSHI_RE.test(`${item.name} ${item.cuisine || ''}`)) chip = '<span class="results__chip">sushi</span>';
+      meta = [item.distance != null ? formatDistance(item.distance) : '', item.address].filter(Boolean).join(' · ');
+      const label = cuisineLabel(item.cuisine) || (SUSHI_RE.test(item.name) ? 'sushi' : '');
+      if (label) chip = `<span class="results__chip">${escapeHtml(label)}</span>`;
     } else {
       icon = '<span class="results__icon">→</span>';
       meta = item.address || '';
@@ -267,7 +278,12 @@ export function createUI(handlers = {}) {
     else if (view.state === 'error') parts.push(`<p class="results__note">${escapeHtml(view.message || 'El buscador no responde. Prueba en un momento.')}</p>`);
     else if (view.state === 'enter') parts.push('<p class="results__note">El buscador rápido no responde. Escribe y pulsa Intro.</p>');
     else if (!index) parts.push('<p class="results__note">Nada con ese nombre por aquí.</p>');
-    parts.push('<button type="button" class="results__action">¿No aparece? Márcalo a mano en el mapa</button>');
+    const q = String(view.query || '').trim();
+    parts.push(
+      q
+        ? `<button type="button" class="results__action" data-query="${escapeHtml(q)}">¿No aparece? Añadir «${escapeHtml(q)}» a mano en el mapa</button>`
+        : '<button type="button" class="results__action">¿No aparece? Márcalo a mano en el mapa</button>',
+    );
     els.searchResults.innerHTML = parts.join('');
     els.searchResults.hidden = false;
   }
@@ -328,6 +344,7 @@ export function createUI(handlers = {}) {
   let nearbyCount = 0;
   els.nearbyButton.addEventListener('click', () => (nearbyCount ? handlers.onClearSuggestions?.() : handlers.onNearby?.()));
   els.locateButton.addEventListener('click', () => handlers.onLocate?.());
+  els.addButton.addEventListener('click', () => handlers.onAdd?.());
   els.crosshairConfirm.addEventListener('click', () => handlers.onCrosshairConfirm?.());
   els.crosshairCancel.addEventListener('click', () => handlers.onCrosshairCancel?.());
 
@@ -335,7 +352,7 @@ export function createUI(handlers = {}) {
     nearbyCount = busy ? 0 : count;
     els.nearbyButton.classList.toggle('is-busy', busy);
     els.nearbyButton.disabled = busy;
-    els.nearbyLabel.textContent = busy ? 'Buscando…' : count ? `${count} cerca · Limpiar` : 'Sushi por aquí';
+    els.nearbyLabel.textContent = busy ? 'Buscando sushi…' : count ? `${count} cerca · Limpiar` : 'Sushi por aquí';
   }
   function setLocateBusy(busy) {
     els.locateButton.classList.toggle('is-pulsing', busy);
@@ -501,7 +518,17 @@ export function createUI(handlers = {}) {
     document.title = visits ? `${plural(visits, 'visita', 'visitas')} · ${title}` : title;
   }
 
-  function renderList({ visited, pending, tab, selectedId, favId }) {
+  function rowMeta(p, home) {
+    const parts = [];
+    if (home) {
+      const d = distanceMeters(home, p);
+      parts.push(d < 150 ? 'al lado de casa' : `a ${formatDistance(d)} de casa`);
+    }
+    parts.push(p.address || (home ? '' : 'Sin dirección'));
+    return parts.filter(Boolean).join(' · ');
+  }
+
+  function renderList({ visited, pending, tab, selectedId, favId, home }) {
     els.tabVisited.classList.toggle('is-active', tab === 'visited');
     els.tabPending.classList.toggle('is-active', tab === 'pending');
     els.tabVisited.setAttribute('aria-selected', String(tab === 'visited'));
@@ -523,7 +550,7 @@ export function createUI(handlers = {}) {
           p.status === 'pending'
             ? `<button type="button" class="pill row__plus" data-id="${escapeHtml(p.id)}" aria-label="${escapeHtml(`Apuntar la primera visita a ${p.name}`)}">Hemos ido</button>`
             : `<button type="button" class="pill row__plus" data-id="${escapeHtml(p.id)}" aria-label="${escapeHtml(`Sumar una visita a ${p.name}`)}">+1</button>`;
-        return `<li class="row ${p.id === selectedId ? 'is-selected' : ''}" data-id="${escapeHtml(p.id)}"><button type="button" class="row__main" data-id="${escapeHtml(p.id)}"><span class="row__text">${fav ? '<span class="eyebrow eyebrow--fav">el de siempre</span>' : ''}<span class="row__name">${escapeHtml(p.name)}</span><span class="row__meta">${escapeHtml(p.address || 'Sin dirección')}</span></span>${right}</button>${action}</li>`;
+        return `<li class="row ${p.id === selectedId ? 'is-selected' : ''}" data-id="${escapeHtml(p.id)}"><button type="button" class="row__main" data-id="${escapeHtml(p.id)}"><span class="row__text">${fav ? '<span class="eyebrow eyebrow--fav">el de siempre</span>' : ''}<span class="row__name">${escapeHtml(p.name)}</span><span class="row__meta">${escapeHtml(rowMeta(p, home))}</span></span>${right}</button>${action}</li>`;
       })
       .join('');
 
@@ -840,6 +867,48 @@ export function createUI(handlers = {}) {
     });
   }
 
+  /**
+   * Hoja de acciones: lista de opciones grandes. Resuelve con el id elegido o null.
+   * @param {{title: string, text?: string, actions: Array<{id: string, icon?: string, label: string, hint?: string, danger?: boolean}>}} opts
+   */
+  function actionSheet({ title, text, actions }) {
+    return new Promise((resolve) => {
+      els.actionsTitle.textContent = title;
+      els.actionsText.textContent = text || '';
+      els.actionsText.hidden = !text;
+      els.actionsList.innerHTML = actions
+        .map(
+          (a) => `<button type="button" class="action ${a.danger ? 'action--danger' : ''}" data-id="${escapeHtml(a.id)}"><span class="action__icon" aria-hidden="true">${escapeHtml(a.icon || '')}</span><span class="action__text"><span class="action__label">${escapeHtml(a.label)}</span>${a.hint ? `<span class="action__hint">${escapeHtml(a.hint)}</span>` : ''}</span></button>`,
+        )
+        .join('');
+      const done = (value) => {
+        els.actionsList.removeEventListener('click', onPick);
+        els.actionsCancel.removeEventListener('click', onCancel);
+        els.actionsDialog.removeEventListener('close', onClose);
+        closeDialog(els.actionsDialog);
+        resolve(value);
+      };
+      const onPick = (e) => {
+        const btn = e.target.closest('.action');
+        if (btn) done(btn.dataset.id);
+      };
+      const onCancel = () => done(null);
+      const onClose = () => done(null);
+      els.actionsList.addEventListener('click', onPick);
+      els.actionsCancel.addEventListener('click', onCancel);
+      els.actionsDialog.addEventListener('close', onClose);
+      openDialog(els.actionsDialog);
+    });
+  }
+
+  /** @param {Array<{label: string, value: string, hint?: string}>} rows */
+  function showStats(rows) {
+    els.statsBody.innerHTML = rows
+      .map((r) => `<div class="numbers__row"><dt>${escapeHtml(r.label)}</dt><dd>${escapeHtml(r.value)}${r.hint ? `<small>${escapeHtml(r.hint)}</small>` : ''}</dd></div>`)
+      .join('');
+    openDialog(els.statsDialog);
+  }
+
   /** Posición vertical (px) del borde visible de la hoja, para centrar cosas en la franja del mapa. */
   function sheetTop() {
     return isDesktop() ? window.innerHeight : els.panel.getBoundingClientRect().top;
@@ -865,6 +934,9 @@ export function createUI(handlers = {}) {
     setMenuOpen,
     setMenuFooter,
     setNearbyState,
+    setMapStyleUI,
+    actionSheet,
+    showStats,
     setLocateBusy,
     setCrosshair,
     setOnline,

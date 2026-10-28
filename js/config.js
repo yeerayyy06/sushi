@@ -16,10 +16,13 @@ export const CONFIG = {
   // Mensaje de bienvenida: se enseña UNA vez por dispositivo la primera vez que se entra. Vacío = no se enseña.
   welcome: '',
 
-  // Dónde se centra el mapa la primera vez (hasta que haya sitios guardados).
-  // [latitud, longitud] y zoom. Por defecto: Barcelona.
-  defaultCenter: [41.3874, 2.1686],
-  defaultZoom: 13,
+  // Dónde se centra el mapa la primera vez (hasta que haya sitios guardados o marquéis vuestra casa).
+  // [latitud, longitud] y zoom. Por defecto: Santa Perpètua de Mogoda.
+  defaultCenter: [41.5343, 2.1836],
+  defaultZoom: 14,
+
+  // Estilo del mapa por defecto: 'color', 'suave', 'noche' o 'clasico'. Se puede cambiar desde el menú.
+  mapStyle: 'color',
 
   // --- Contraseña (modo real, con Firebase) ---
   // Email del usuario que creas en Firebase > Authentication > Users.
@@ -43,12 +46,6 @@ export const CONFIG = {
     messagingSenderId: '455968960284',
     appId: '1:455968960284:web:19c0d600a899e5bf5d94d9',
   },
-
-  // --- Mapa base (opcional) ---
-  // Sin clave se usan las teselas estándar de OpenStreetMap (gratis, sin registro).
-  // Si quieres un mapa más bonito y modo oscuro real, pide una clave gratuita de CARTO Basemaps
-  // (solo con tu email, sin tarjeta, uso personal): https://carto.com/basemaps/apikey/ y pégala aquí.
-  cartoKey: '',
 
   // Versión del SDK de Firebase que se carga desde el CDN de Google.
   firebaseSdkVersion: '13.1.0',

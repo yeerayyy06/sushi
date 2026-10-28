@@ -6,7 +6,9 @@ habéis repetido en cada uno, y los que tenéis pendientes de probar.
 - **Coste: 0 €** para siempre. Web estática en GitHub Pages + plan gratuito de Firebase (sin tarjeta).
 - **Entrada con contraseña**: una sola contraseña para los dos.
 - **Contador de visitas** en cada marcador y total en la cabecera.
+- **Botón «Añadir»** siempre a mano: «Estamos aquí» (con el GPS), marcar en el mapa, buscar por nombre o ver sushis por la zona.
 - **Buscador de restaurantes** (OpenStreetMap) y botón «Sushi por aquí» para apuntar pendientes.
+- **Nuestra casa** en el mapa, con la distancia a cada sushi, «¿Dónde vamos hoy?» y vuestras estadísticas.
 - Funciona en el móvil como una app (se puede añadir a la pantalla de inicio); los cambios hechos sin cobertura se sincronizan después.
 
 ---
@@ -17,7 +19,7 @@ habéis repetido en cada uno, y los que tenéis pendientes de probar.
 | --- | --- | --- |
 | La web (HTML/CSS/JS, sin frameworks ni build) | Este repo, publicado con **GitHub Pages** | 0 € |
 | La contraseña y los datos compartidos | **Firebase**: Authentication (email + contraseña) y Firestore (base de datos) | 0 € (plan Spark) |
-| Mapa y buscador | OpenStreetMap (teselas), Photon y Nominatim (búsqueda) | 0 € (sin registro) |
+| Mapa y buscador | OpenFreeMap (mapa en color), OpenStreetMap, Photon y Nominatim (búsqueda) | 0 € (sin registro) |
 
 Una web estática no puede guardar nada por sí sola ni esconder una contraseña (todo su código es público),
 así que la contraseña «de verdad» la comprueba Firebase y los datos se guardan en Firestore, protegidos
@@ -100,13 +102,13 @@ Todo está en [`js/config.js`](js/config.js):
 | Campo | Para qué |
 | --- | --- |
 | `title`, `subtitle` | Texto de la cabecera y de la pantalla de entrada. |
-| `defaultCenter`, `defaultZoom` | Dónde se centra el mapa hasta que haya sitios (por defecto Barcelona). |
+| `defaultCenter`, `defaultZoom` | Dónde se abre el mapa hasta que haya sitios o casa (por defecto Santa Perpètua de Mogoda). |
+| `mapStyle` | Estilo del mapa por defecto: `color`, `suave`, `noche` o `clasico`. Cada móvil puede cambiarlo en el menú. |
 | `sharedEmail` | Email de la cuenta compartida de Firebase. |
 | `demoPassword` | Contraseña del modo demo (solo cuenta si no hay Firebase). |
 | `initials` | Vuestras iniciales para el botón del menú, por ejemplo `'Y·A'`. Vacío = icono de tres rayas. |
 | `dedication` | Dedicatoria al pie de la pantalla de entrada y del menú. |
 | `welcome` | Mensaje de bienvenida que se muestra una sola vez por dispositivo la primera vez que se entra. Vacío = nada. |
-| `cartoKey` | Opcional. Con una clave gratuita de [CARTO Basemaps](https://carto.com/basemaps/apikey/) (solo piden un email, uso personal) el mapa se ve más limpio y el modo oscuro usa teselas oscuras de verdad. Sin clave, se usa OpenStreetMap estándar. |
 
 Para cambiar la contraseña: Firebase → Authentication → Users → menú ⋮ del usuario → **Restablecer contraseña**
 (o bórralo y créalo de nuevo, actualizando el UID de las reglas).
@@ -123,20 +125,27 @@ se guardan en el teléfono y se sincronizan al volver la conexión.
 
 ## Cómo se usa
 
-- **Buscar**: escribe el nombre del restaurante (o una ciudad para mover el mapa). Elige un resultado y
-  pulsa **Ya hemos ido** (suma la primera visita con la fecha de hoy) o **Pendiente**.
-- **Sushi por aquí**: muestra como puntos grises los restaurantes de sushi/japoneses de la zona que estás
-  viendo (según OpenStreetMap). Toca uno para añadirlo. «Limpiar» los quita.
-- **Mantén pulsado el mapa** (clic derecho en ordenador) o usa menú → **Marcar en el mapa** para poner un
-  pin donde quieras, con la dirección rellenada automáticamente.
+- **Añadir** (botón negro de abajo): elige cómo.
+  - **Estamos aquí ahora**: usa el GPS y busca el restaurante en el que estáis. Ideal sentados a la mesa.
+  - **Marcar en el mapa**: mueve el mapa hasta el sitio y deja el pin.
+  - **Buscar por nombre**: escribe el nombre arriba. Si no aparece, la última opción de los resultados
+    es «Añadir «nombre» a mano en el mapa».
+  - **Ver sushis por la zona**: igual que el botón «Sushi por aquí».
+- **Sushi por aquí**: busca alrededor de lo que se ve en el mapa (al menos 1,5 km) los restaurantes que
+  OpenStreetMap marca como sushi, japoneses o asiáticos, y los pinta con su nombre. Toca uno para añadirlo.
+  «Ver todos los restaurantes» enseña también el resto en gris, por si alguno hace sushi y no lo pone.
+- **Mantén pulsado el mapa** (clic derecho en ordenador) para poner un pin rápido.
 - **Contador**: cada sitio visitado es un punto negro con el número de veces que habéis ido. Se suma con
   **+1** desde la lista, desde la ficha o desde la barra inferior; cada +1 se puede deshacer al momento.
 - En la ficha: visitas con fecha y nota (**Con otra fecha…** para apuntar una pasada), puntuación 🍣,
   notas con autoguardado, **Cómo llegar**, **Editar**, **Mover pin** y **Eliminar sitio** (con deshacer).
-- La lista (**Visitados** / **Pendientes**) y el total de visitas están en el panel inferior (lateral en ordenador).
-  El sitio más repetido se marca como «el de siempre».
-- Menú (botón redondo): tema automático/claro/oscuro, **Ver todos los sitios**, **Descargar copia (JSON)**,
-  **Importar copia** y **Cerrar sesión**.
+- Menú (botón redondo de arriba):
+  - **Mapa**: Color, Suave, Noche o Clásico. **Tema**: automático, claro u oscuro.
+  - **🏠 Nuestra casa**: marcadla con el GPS o en el mapa. El mapa se abre ahí, la lista dice a qué distancia
+    está cada sushi y podéis buscar sushi cerca de casa. Solo la veis vosotros (está en Firestore, no en el código).
+  - **🎲 ¿Dónde vamos hoy?**: elige al azar un pendiente (o un visitado si no hay pendientes).
+  - **📊 Nuestro sushi en números**: visitas totales y del año, el de siempre, el mejor puntuado, el primero…
+  - **Ver todos los sitios**, **Descargar copia (JSON)**, **Importar copia** y **Cerrar sesión**.
 - En el móvil, el botón «atrás» cierra la ficha en vez de salir de la web.
 
 ---
@@ -156,8 +165,13 @@ de espacio. Dos personas anotando sushis gastan una fracción ínfima.
 Configuración del proyecto → Usuarios y permisos → añadirla como propietaria. Así el proyecto no depende de
 una sola cuenta.
 
-**¿Y si Photon (el buscador) no responde?** La web pasa sola a Nominatim unos minutos (ahí la búsqueda es al
-pulsar Intro, por su política de uso). Siempre puedes poner el pin a mano.
+**¿Por qué a veces hay que pulsar Intro para buscar?** El buscador rápido (Photon) bloquea algunas redes; si no
+responde, la web usa Nominatim durante media hora, y Nominatim solo permite buscar al pulsar Intro (o «Buscar» en
+el teclado del móvil). Con datos móviles suele ir el rápido.
+
+**¿Por qué no sale un restaurante que existe?** Los datos vienen de OpenStreetMap, que no tiene todos los locales
+(o los tiene con otro nombre: «Koyo» en vez de «Koyo Sushi»). Prueba con una sola palabra del nombre o usa
+«Añadir «…» a mano en el mapa».
 
 **¿Copia de seguridad?** Menú → *Descargar copia (JSON)* descarga un archivo con todo. Se puede importar en otra
 instalación (o si algún día cambias de backend). Conviene bajarse una de vez en cuando.
@@ -167,8 +181,11 @@ Añadida a la pantalla de inicio (paso 5) eso no pasa. Nada se pierde: todo est�
 
 **¿Fotos?** No: el almacenamiento de archivos de Firebase ya no entra en el plan gratuito. Las notas sí.
 
-**¿Por qué no sale el mapa / sale gris?** Comprueba la conexión; las teselas vienen de tile.openstreetmap.org.
-Si has puesto `cartoKey` y ves un aviso de «API KEY REQUIRED» en el mapa, la clave no es válida: bórrala.
+**¿Por qué no sale el mapa / sale gris?** Comprueba la conexión. El mapa en color viene de OpenFreeMap; si no carga
+(o el móvil no tiene WebGL), la web cambia sola al estilo «Clásico» de OpenStreetMap.
+
+**He subido un cambio y no lo veo.** GitHub Pages guarda los archivos 10 minutos en caché. En `index.html` hay un
+«mapa de versiones» (`?v=3`): súbelo a `v=4` en todos los módulos y en `styles.css` en cada cambio.
 
 ---
 
@@ -190,11 +207,12 @@ firestore.rules         Reglas de seguridad para pegar en Firebase
 manifest.webmanifest    Para instalarla como app
 icons/                  Iconos de la app
 lib/leaflet/            Leaflet 1.9.4 (licencia BSD-2, incluida)
+lib/maplibre/           MapLibre GL 5.24 y su puente para Leaflet (licencias BSD, incluidas)
 .nojekyll               Le dice a GitHub Pages que publique los archivos tal cual
 ```
 
 ## Créditos
 
-- Mapa: [Leaflet](https://leafletjs.com) · datos y teselas © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.
+- Mapa: [Leaflet](https://leafletjs.com), [MapLibre](https://maplibre.org) y [OpenFreeMap](https://openfreemap.org) (© [OpenMapTiles](https://openmaptiles.org)) · datos © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.
 - Búsqueda: [Photon](https://photon.komoot.io) (komoot), [Nominatim](https://nominatim.org) y [Overpass API](https://overpass-api.de), servicios comunitarios de uso justo.
 - Datos y contraseña: [Firebase](https://firebase.google.com) (plan Spark).

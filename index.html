@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./lib/leaflet/leaflet.css">
-  <link rel="stylesheet" href="./css/styles.css?v=1">
+  <link rel="stylesheet" href="./css/styles.css?v=3">
   <script>
     // Tema antes del primer pintado (evita el parpadeo claro->oscuro). Preferencia: auto | light | dark.
     (function () {
@@ -87,6 +87,15 @@
 
       <nav class="menu" id="menu" hidden aria-label="Opciones">
         <div class="menu__row">
+          <span class="menu__label">Mapa</span>
+          <div class="seg" id="mapstyle-seg" role="group" aria-label="Estilo del mapa">
+            <button type="button" class="seg__btn" data-style="color" aria-pressed="false">Color</button>
+            <button type="button" class="seg__btn" data-style="suave" aria-pressed="false">Suave</button>
+            <button type="button" class="seg__btn" data-style="noche" aria-pressed="false">Noche</button>
+            <button type="button" class="seg__btn" data-style="clasico" aria-pressed="false">Clásico</button>
+          </div>
+        </div>
+        <div class="menu__row">
           <span class="menu__label">Tema</span>
           <div class="seg" id="theme-seg" role="group" aria-label="Tema">
             <button type="button" class="seg__btn" data-theme="auto" aria-pressed="false">Automático</button>
@@ -94,11 +103,14 @@
             <button type="button" class="seg__btn" data-theme="dark" aria-pressed="false">Oscuro</button>
           </div>
         </div>
-        <button type="button" class="menu__item" data-action="center-pin">Marcar en el mapa</button>
-        <button type="button" class="menu__item" data-action="fit">Ver todos los sitios</button>
+        <hr class="menu__hr">
+        <button type="button" class="menu__item" data-action="home">🏠 Nuestra casa</button>
+        <button type="button" class="menu__item" data-action="random">🎲 ¿Dónde vamos hoy?</button>
+        <button type="button" class="menu__item" data-action="stats">📊 Nuestro sushi en números</button>
+        <button type="button" class="menu__item" data-action="fit">🗺️ Ver todos los sitios</button>
+        <hr class="menu__hr">
         <button type="button" class="menu__item" data-action="export">Descargar copia (JSON)</button>
         <button type="button" class="menu__item" data-action="import">Importar copia</button>
-        <hr class="menu__hr">
         <button type="button" class="menu__item menu__item--quiet" data-action="logout">Cerrar sesión</button>
         <p class="menu__footer" id="menu-footer"></p>
         <input type="file" id="import-file" accept="application/json,.json" hidden>
@@ -106,10 +118,16 @@
     </header>
 
     <div class="fabs" id="fabs">
-      <button type="button" class="fab fab--text" id="nearby-button">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>
-        <span id="nearby-label">Sushi por aquí</span>
-      </button>
+      <div class="fabs__group">
+        <button type="button" class="fab fab--primary" id="add-button" aria-haspopup="dialog">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          <span>Añadir</span>
+        </button>
+        <button type="button" class="fab fab--text" id="nearby-button">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>
+          <span id="nearby-label">Sushi por aquí</span>
+        </button>
+      </div>
       <button type="button" class="fab" id="locate-button" aria-label="Mi ubicación">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
       </button>
@@ -245,6 +263,27 @@
     <div class="toasts" id="toasts" aria-live="polite"></div>
     <div class="demo-chip" id="demo-chip" hidden>Modo demo · los datos se quedan en este navegador</div>
 
+    <dialog class="dialog dialog--sheet" id="actions-dialog">
+      <form method="dialog" class="dialog__form">
+        <h3 class="dialog__title" id="actions-title"></h3>
+        <p class="dialog__text" id="actions-text" hidden></p>
+        <div class="actions-list" id="actions-list"></div>
+        <div class="dialog__actions">
+          <button type="button" class="textbtn textbtn--quiet" id="actions-cancel">Cancelar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="dialog" id="stats-dialog">
+      <form method="dialog" class="dialog__form">
+        <h3 class="dialog__title">Nuestro sushi en números</h3>
+        <dl class="numbers" id="stats-body"></dl>
+        <div class="dialog__actions">
+          <button type="submit" class="textbtn">Cerrar</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog class="dialog" id="confirm-dialog">
       <form method="dialog" class="dialog__form">
         <h3 class="dialog__title" id="confirm-title"></h3>
@@ -290,6 +329,23 @@
   </div>
 
   <script src="./lib/leaflet/leaflet.js"></script>
-  <script type="module" src="./js/app.js?v=1"></script>
+  <!-- Versión de los módulos: súbela (v=3, v=4…) en cada cambio para que nadie mezcle archivos viejos y nuevos. -->
+  <script type="importmap">
+    {
+      "imports": {
+        "./js/app.js": "./js/app.js?v=3",
+        "./js/auth.js": "./js/auth.js?v=3",
+        "./js/config.js": "./js/config.js?v=3",
+        "./js/firebase.js": "./js/firebase.js?v=3",
+        "./js/map.js": "./js/map.js?v=3",
+        "./js/search.js": "./js/search.js?v=3",
+        "./js/store.js": "./js/store.js?v=3",
+        "./js/ui.js": "./js/ui.js?v=3",
+        "./js/util.js": "./js/util.js?v=3"
+      }
+    }
+  </script>
+  <!-- Se importa desde un módulo en línea para que también app.js pase por el mapa de versiones. -->
+  <script type="module">import './js/app.js';</script>
 </body>
 </html>

@@ -2,14 +2,18 @@
 import { CONFIG } from './config.js';
 import { createAuth } from './auth.js';
 import { createStore, STATUS } from './store.js';
-import { createMap } from './map.js';
+import { createMap, MAP_STYLES } from './map.js';
 import { createUI } from './ui.js';
-import { searchPlaces, discoverSushi, reverseGeocode, getSearchProvider } from './search.js';
-import { todayISO, normalize, distanceMeters, plural, isAbortError, isValidLatLng, randomId, debounce } from './util.js';
+import { searchPlaces, discoverSushi, reverseGeocode, getSearchProvider, findPlaceAt } from './search.js';
+import { todayISO, normalize, distanceMeters, plural, isAbortError, isValidLatLng, randomId, debounce, formatDate, formatDistance } from './util.js';
 
 const VIEW_KEY = 'sushimap:view';
 const TAB_KEY = 'sushimap:tab';
 const WELCOME_KEY = 'sushimap:welcomed';
+const MAPSTYLE_KEY = 'sushimap:mapstyle';
+// La casa se guarda como un documento más de "places" con esta marca en el campo osm
+// (así encaja en las reglas de Firestore sin tener que cambiarlas). La app la separa del resto.
+const HOME_OSM = 'sushimap:home';
 const DUPLICATE_METERS = 30;
 const MILESTONES = {
   10: '10 visitas. Esto empieza a ser una costumbre.',
@@ -20,6 +24,8 @@ const MILESTONES = {
 
 const state = {
   places: [],
+  home: null,
+  homes: [],
   visited: [],
   pending: [],
   tab: readLocal(TAB_KEY) === 'pending' ? 'pending' : 'visited',
@@ -27,8 +33,9 @@ const state = {
   favId: null,
   totalVisits: null, // null hasta el primer snapshot
   candidate: null,
-  suggestions: [],
-  crosshair: null, // { mode: 'new' } | { mode: 'move', id }
+  suggestions: [], // sugerencias que se ven ahora en el mapa
+  discovered: null, // { sushi, others } de la última búsqueda por zona
+  crosshair: null, // { mode: 'new', name } | { mode: 'move', id } | { mode: 'home' }
   pendingOpenId: null,
   highlightVisitId: null,
   returnSheet: 'peek', // estado de la hoja antes de abrir una ficha o un candidato
@@ -36,6 +43,7 @@ const state = {
   searchAbort: null,
   nearbyAbort: null,
   reverseAbort: null,
+  hereAbort: null,
   started: false,
   bye: null,
   online: navigator.onLine,
@@ -50,20 +58,24 @@ let unsubscribe = null;
 const ui = createUI({
   appTitle: CONFIG.title,
   onLogin: login,
-  onThemeApplied: (theme) => map?.setTheme(theme),
+  onMapStyle: (key) => setMapStyle(key),
   onSearchInput: onSearchInput,
   onSearchSubmit: (q) => runSearch(q),
   onSearchClear: () => {
     debouncedSearch.cancel();
     abort('searchAbort');
   },
-  onSearchAction: () => enterCrosshair({ mode: 'new' }),
+  onSearchAction: (query) => {
+    ui.setSearchValue('');
+    enterCrosshair({ mode: 'new', name: query });
+  },
   onResultPick: onResultPick,
   onMenuAction: onMenuAction,
   onImportFile: importFile,
   onNearby: findNearby,
   onClearSuggestions: clearSuggestions,
   onLocate: locate,
+  onAdd: openAddSheet,
   onCrosshairConfirm: confirmCrosshair,
   onCrosshairCancel: () => exitCrosshair({ cancelled: true }),
   onEscape: () => {
@@ -143,13 +155,19 @@ function showLogin() {
     unsubscribe();
     unsubscribe = null;
   }
+  debouncedSearch.cancel();
+  for (const key of ['searchAbort', 'reverseAbort', 'hereAbort']) abort(key);
+  ui.setLocateBusy(false);
   state.places = [];
+  state.home = null;
+  state.homes = [];
   state.selectedId = null;
   state.candidate = null;
   state.crosshair = null;
   state.totalVisits = null;
   if (map) {
     map.setPlaces([]);
+    map.setHome(null);
     map.setDraft(null);
     clearSuggestions();
   }
@@ -189,9 +207,8 @@ async function enterApp() {
     map = createMap(document.getElementById('map'), {
       center: saved ? [saved.lat, saved.lng] : CONFIG.defaultCenter,
       zoom: saved ? saved.zoom : CONFIG.defaultZoom,
-      theme: ui.getTheme(),
-      cartoKey: CONFIG.cartoKey,
       onPlaceClick: (id) => openPlace(id),
+      onHomeClick: () => openHomeSheet(),
       onSuggestionClick: (s) => startCandidate({ ...s, source: 'suggestion' }),
       onLongPress: (latlng) => {
         if (!state.crosshair) startCandidate({ ...latlng, name: '', address: '', needsReverse: true });
@@ -199,8 +216,15 @@ async function enterApp() {
       onMapClick: onMapClick,
       onMoveEnd: onMoveEnd,
       onTilesFailing: () => ui.toast('El mapa no carga. La lista sigue funcionando.'),
+      onStyleFallback: () => {
+        ui.setMapStyleUI('clasico');
+        ui.toast('El mapa en color no carga en este dispositivo; uso el clásico.');
+      },
     });
     state.firstFit = !saved;
+    const style = readLocal(MAPSTYLE_KEY) || CONFIG.mapStyle || 'color';
+    ui.setMapStyleUI(MAP_STYLES[style] ? style : 'color');
+    map.setStyle(style);
   } else {
     map.invalidate();
   }
@@ -227,7 +251,14 @@ function showWelcomeOnce() {
 // ---------------------------------------------------------------------------
 // Datos
 // ---------------------------------------------------------------------------
-function onPlaces(places) {
+function onPlaces(allPlaces) {
+  const homes = allPlaces.filter((p) => p.osm === HOME_OSM);
+  const places = allPlaces.filter((p) => p.osm !== HOME_OSM);
+  state.homes = homes;
+  state.home = homes[0] || null;
+  // Si los dos móviles marcaron casa a la vez, nos quedamos con una (la más reciente) y quitamos las demás.
+  for (const extra of homes.slice(1)) store.remove(extra.id).catch(() => {});
+  map.setHome(state.home);
   state.places = places;
   const lastVisit = (p) => p.visits[0]?.date || '';
   state.visited = places
@@ -267,9 +298,10 @@ function onPlaces(places) {
     state.pendingOpenId = null;
     openPlace(id, { fly: false, keepReturn: true });
   }
-  if (state.firstFit && places.length) {
+  if (state.firstFit && (places.length || state.home)) {
     state.firstFit = false;
-    map.fitPlaces(places);
+    if (places.length) map.fitPoints(state.home ? [...places, state.home] : places, { paddingBottom: ui.isDesktop() ? 0 : 90 });
+    else map.flyTo(state.home, 15);
   }
   if (state.totalVisits == null) showMemoryOnce(places);
   state.totalVisits = total;
@@ -295,7 +327,7 @@ function showMemoryOnce(places) {
 }
 
 function renderList() {
-  ui.renderList({ visited: state.visited, pending: state.pending, tab: state.tab, selectedId: state.selectedId, favId: state.favId });
+  ui.renderList({ visited: state.visited, pending: state.pending, tab: state.tab, selectedId: state.selectedId, favId: state.favId, home: state.home });
 }
 
 function placeById(id) {
@@ -330,6 +362,10 @@ function focusOffset() {
 function openPlace(id, { fly = true, keepReturn = false } = {}) {
   const place = placeById(id);
   if (!place) return;
+  if (state.hereAbort) {
+    abort('hereAbort');
+    ui.setLocateBusy(false);
+  }
   if (state.candidate) cancelCandidate({ silent: true, keepHistory: true });
   else if (!state.selectedId && !keepReturn) state.returnSheet = ui.getSheet();
   state.selectedId = id;
@@ -484,13 +520,14 @@ function findDuplicate(c, { strict = true } = {}) {
   );
 }
 
+/** Abre la vista de "nuevo sitio". Devuelve false si no la abre (coordenadas malas o sitio ya guardado). */
 function startCandidate(c) {
-  if (!isValidLatLng(c.lat, c.lng)) return;
+  if (!isValidLatLng(c.lat, c.lng)) return false;
   const existing = findDuplicate(c, { strict: true });
   if (existing) {
     openPlace(existing.id);
     ui.toast('Ya lo teníamos apuntado.');
-    return;
+    return false;
   }
   abort('reverseAbort');
   if (state.selectedId) {
@@ -507,6 +544,7 @@ function startCandidate(c) {
     dupe: Boolean(findDuplicate(state.candidate, { strict: false })),
     focusName: !state.candidate.name,
   });
+  if (c.hint) ui.setCandidateHint(c.hint);
   ui.showView('new');
   ui.setSheet('half');
   ui.hideResults();
@@ -530,6 +568,7 @@ function startCandidate(c) {
         if (!isAbortError(err)) ui.updateCandidate({ loadingAddress: false });
       });
   }
+  return true;
 }
 
 function cancelCandidate({ silent = false, fromHistory = false, keepHistory = false } = {}) {
@@ -588,18 +627,25 @@ function saveCandidate(status, form) {
 // ---------------------------------------------------------------------------
 // Cruz central: marcar un sitio nuevo o mover un pin
 // ---------------------------------------------------------------------------
-function enterCrosshair({ mode, id }) {
+function enterCrosshair({ mode, id, name = '' }) {
+  if (state.hereAbort) {
+    abort('hereAbort');
+    ui.setLocateBusy(false);
+  }
   ui.hideResults();
   ui.setMenuOpen(false);
   if (state.candidate) cancelCandidate({ silent: true });
   if (state.selectedId) closeDetail({ silent: true, keepHistory: mode === 'move' });
-  state.crosshair = { mode, id };
+  state.crosshair = { mode, id, name };
   ui.setSheet('peek');
-  ui.setCrosshair({
-    on: true,
-    text: mode === 'move' ? 'Mueve el mapa hasta donde está de verdad' : 'Mueve el mapa hasta el sitio',
-    confirmLabel: mode === 'move' ? 'Dejar el pin aquí' : 'Marcar aquí',
-  });
+  const texts = {
+    new: [name ? `Mueve el mapa hasta «${name}»` : 'Mueve el mapa hasta el sitio', 'Marcar aquí'],
+    move: ['Mueve el mapa hasta donde está de verdad', 'Dejar el pin aquí'],
+    home: ['Mueve el mapa hasta vuestra casa', 'Nuestra casa está aquí'],
+  };
+  const [text, confirmLabel] = texts[mode] || texts.new;
+  ui.setCrosshair({ on: true, text, confirmLabel });
+  if (mode === 'home' && state.home) setTimeout(() => map.focus(state.home, { offsetY: stripOffset(), zoom: Math.max(map.getView().zoom, 16) }), 280);
   if (mode === 'move') {
     const place = placeById(id);
     if (place) setTimeout(() => map.focus(place, { offsetY: stripOffset(), zoom: map.getView().zoom }), 280);
@@ -630,7 +676,11 @@ function confirmCrosshair() {
     ui.toast('Pin movido.');
     return;
   }
-  startCandidate({ ...latlng, name: '', address: '', needsReverse: true });
+  if (mode.mode === 'home') {
+    saveHome(latlng);
+    return;
+  }
+  startCandidate({ ...latlng, name: mode.name || '', address: '', needsReverse: true });
 }
 
 function exitCrosshair({ cancelled }) {
@@ -643,7 +693,7 @@ function exitCrosshair({ cancelled }) {
 // ---------------------------------------------------------------------------
 // Búsqueda
 // ---------------------------------------------------------------------------
-const debouncedSearch = debounce((q) => runSearch(q), 300);
+const debouncedSearch = debounce((q) => runSearch(q), 400);
 
 function onSearchInput(q) {
   const query = q.trim();
@@ -655,19 +705,19 @@ function onSearchInput(q) {
   }
   const mine = localMatches(query);
   if (query.length < 3) {
-    if (mine.length) ui.renderResults({ state: 'results', groups: [{ label: 'Nuestros sitios', items: mine }] });
+    if (mine.length) ui.renderResults({ state: 'results', query, groups: [{ label: 'Nuestros sitios', items: mine }] });
     else ui.hideResults();
     return;
   }
   if (!state.online) {
-    ui.renderResults({ state: 'error', groups: [{ label: 'Nuestros sitios', items: mine }], message: 'La búsqueda necesita internet. Puedes marcar el mapa a mano.' });
+    ui.renderResults({ state: 'error', query, groups: [{ label: 'Nuestros sitios', items: mine }], message: 'La búsqueda necesita internet. Puedes marcar el mapa a mano.' });
     return;
   }
   if (getSearchProvider() === 'nominatim') {
-    ui.renderResults({ state: 'enter', groups: [{ label: 'Nuestros sitios', items: mine }] });
+    ui.renderResults({ state: 'enter', query, groups: [{ label: 'Nuestros sitios', items: mine }] });
     return;
   }
-  ui.renderResults({ state: 'loading', groups: [{ label: 'Nuestros sitios', items: mine }] });
+  ui.renderResults({ state: 'loading', query, groups: [{ label: 'Nuestros sitios', items: mine }] });
   debouncedSearch(query);
 }
 
@@ -691,7 +741,7 @@ async function runSearch(q) {
   state.searchAbort = controller;
   const { center, zoom } = map.getView();
   const mine = localMatches(query);
-  ui.renderResults({ state: 'loading', groups: [{ label: 'Nuestros sitios', items: mine }] });
+  ui.renderResults({ state: 'loading', query, groups: [{ label: 'Nuestros sitios', items: mine }] });
   try {
     const results = await searchPlaces(query, { near: center, zoom, limit: 7, signal: controller.signal });
     if (state.searchAbort !== controller) return;
@@ -699,6 +749,7 @@ async function runSearch(q) {
     const other = results.filter((r) => r.kind !== 'food' && r.kind !== 'shop');
     ui.renderResults({
       state: 'results',
+      query,
       groups: [
         { label: 'Nuestros sitios', items: mine },
         { label: 'Restaurantes', items: food },
@@ -710,6 +761,7 @@ async function runSearch(q) {
     console.warn(err);
     ui.renderResults({
       state: getSearchProvider() === 'nominatim' ? 'enter' : 'error',
+      query,
       groups: [{ label: 'Nuestros sitios', items: mine }],
       message: 'El buscador no responde. Prueba en un momento.',
     });
@@ -734,44 +786,53 @@ function onResultPick(item) {
 // ---------------------------------------------------------------------------
 // Sushi por aquí (sugerencias)
 // ---------------------------------------------------------------------------
-async function findNearby() {
+async function findNearby({ around } = {}) {
   if (!state.online) {
     ui.toast('Para buscar por aquí hace falta internet.');
     return;
   }
   const view = map.getView();
-  if (view.zoom < 13) {
-    ui.toast('Acércate más para buscar por aquí.');
+  const center = around || view.center;
+  if (!around && view.zoom < 12) {
+    ui.toast('Acércate un poco más al mapa para buscar por aquí.');
     return;
   }
   abort('nearbyAbort');
   const controller = new AbortController();
   state.nearbyAbort = controller;
+  state.discovered = null;
   ui.setNearbyState({ busy: true });
-  const show = (list) => {
-    if (state.nearbyAbort !== controller) return 0;
-    const fresh = list.filter((s) => !findDuplicate(s, { strict: false }));
-    state.suggestions = fresh;
-    map.setSuggestions(fresh);
-    ui.setNearbyState({ busy: false, count: fresh.length });
-    return fresh.length;
-  };
-  let shown = 0;
-  try {
-    const list = await discoverSushi(view.bounds, {
-      signal: controller.signal,
-      onPartial: (partial) => {
-        shown = show(partial);
-      },
-    });
+  ui.toast('Buscando sushi por la zona…', { duration: 2500 });
+
+  const show = (result) => {
     if (state.nearbyAbort !== controller) return;
-    const n = show(list);
-    if (!n) ui.toast('No hemos encontrado sushi en esta zona. Mueve el mapa o acércate más.');
-    else if (n > shown) ui.toast(`${plural(n, 'sitio', 'sitios')} cerca. Toca un punto para añadirlo.`);
+    state.discovered = result;
+    showSuggestions(result.sushi.map((s) => ({ ...s, tier: 'sushi' })));
+  };
+  try {
+    const result = await discoverSushi(center, view.bounds, { signal: controller.signal, onProgress: show });
+    if (state.nearbyAbort !== controller) return;
+    show(result);
+    const n = state.suggestions.length;
+    const others = result.others.filter((s) => !findDuplicate(s, { strict: false }));
+    if (n) {
+      map.fitPoints([center, ...state.suggestions], { maxZoom: Math.max(15, Math.min(17, view.zoom)), paddingBottom: ui.isDesktop() ? 0 : 90 });
+      ui.toast(`${plural(n, 'sitio', 'sitios')} de sushi o cocina asiática cerca. Toca uno para añadirlo.`, {
+        duration: 7000,
+        action: others.length ? 'Ver todos los restaurantes' : undefined,
+        onAction: () => showAllRestaurants(),
+      });
+    } else {
+      ui.toast(
+        others.length
+          ? `No hay sushi marcado en OpenStreetMap por aquí, pero sí ${plural(others.length, 'restaurante', 'restaurantes')}.`
+          : 'No hemos encontrado restaurantes por aquí. Si conocéis uno, usad «Añadir».',
+        { duration: 8000, action: others.length ? 'Verlos' : undefined, onAction: () => showAllRestaurants() },
+      );
+    }
   } catch (err) {
     if (isAbortError(err)) return;
-    ui.setNearbyState({ busy: false, count: state.suggestions.length });
-    ui.toast('Las sugerencias no responden ahora mismo. Inténtalo luego.');
+    ui.toast(err.message || 'Las sugerencias no responden ahora mismo. Inténtalo luego.');
   } finally {
     if (state.nearbyAbort === controller) {
       state.nearbyAbort = null;
@@ -780,9 +841,27 @@ async function findNearby() {
   }
 }
 
+/** Pinta sugerencias, quitando las que ya están en el mapa. */
+function showSuggestions(list) {
+  const fresh = list.filter((s) => !findDuplicate(s, { strict: false }));
+  state.suggestions = fresh;
+  map.setSuggestions(fresh);
+  ui.setNearbyState({ busy: Boolean(state.nearbyAbort), count: fresh.length });
+}
+
+/** Muestra también los restaurantes que OpenStreetMap no marca como sushi (por si alguno lo es). */
+function showAllRestaurants() {
+  const d = state.discovered;
+  if (!d) return;
+  showSuggestions([...d.sushi.map((s) => ({ ...s, tier: 'sushi' })), ...d.others.map((s) => ({ ...s, tier: 'other' }))]);
+  map.fitPoints([map.getView().center, ...state.suggestions], { maxZoom: 16, paddingBottom: ui.isDesktop() ? 0 : 90 });
+  ui.toast('En gris, el resto de restaurantes. Toca uno para añadirlo.', { duration: 5000 });
+}
+
 function clearSuggestions() {
   abort('nearbyAbort');
   state.suggestions = [];
+  state.discovered = null;
   map.clearSuggestions();
   ui.setNearbyState({ busy: false, count: 0 });
 }
@@ -790,7 +869,7 @@ function clearSuggestions() {
 function removeSuggestion(osm) {
   state.suggestions = state.suggestions.filter((s) => s.osm !== osm);
   map.setSuggestions(state.suggestions);
-  ui.setNearbyState({ busy: false, count: state.suggestions.length });
+  ui.setNearbyState({ busy: Boolean(state.nearbyAbort), count: state.suggestions.length });
 }
 
 // ---------------------------------------------------------------------------
@@ -823,11 +902,17 @@ async function locate() {
 
 function onMenuAction(action) {
   switch (action) {
-    case 'center-pin':
-      enterCrosshair({ mode: 'new' });
+    case 'home':
+      openHomeSheet();
+      break;
+    case 'random':
+      pickRandom();
+      break;
+    case 'stats':
+      showNumbers();
       break;
     case 'fit':
-      if (state.places.length) map.fitPlaces(state.places);
+      if (state.places.length) map.fitPoints(state.home ? [...state.places, state.home] : state.places, { paddingBottom: ui.isDesktop() ? 0 : 90 });
       else ui.toast('Todavía no hay sitios en el mapa.');
       break;
     case 'export':
@@ -850,7 +935,7 @@ function exportJson() {
     app: 'sushimap',
     version: 1,
     exportedAt: new Date().toISOString(),
-    places: state.places.map(({ id, name, address, notes, lat, lng, status, rating, visits, osm, createdAt, updatedAt }) => ({
+    places: [...state.places, state.home].filter(Boolean).map(({ id, name, address, notes, lat, lng, status, rating, visits, osm, createdAt, updatedAt }) => ({
       id, name, address, notes, lat, lng, status, rating, visits, osm, createdAt, updatedAt,
     })),
   };
@@ -894,6 +979,10 @@ async function importFile(file) {
       failed += 1;
       continue;
     }
+    if (candidate.osm === HOME_OSM) {
+      if (!state.home) saveHome(candidate, { quiet: true });
+      continue;
+    }
     if (findDuplicate(candidate, { strict: false })) {
       skipped += 1;
       continue;
@@ -918,6 +1007,208 @@ async function importFile(file) {
     }
   }
   ui.toast(`Importados ${plural(added, 'sitio', 'sitios')}` + (skipped ? ` · ${skipped} ya estaban` : '') + (failed ? ` · ${failed} con errores` : '') + '.', { duration: 7000 });
+}
+
+// ---------------------------------------------------------------------------
+// Botón "Añadir" y "estamos aquí"
+// ---------------------------------------------------------------------------
+async function openAddSheet() {
+  ui.setMenuOpen(false);
+  ui.hideResults();
+  const choice = await ui.actionSheet({
+    title: 'Añadir un sushi',
+    actions: [
+      { id: 'here', icon: '📍', label: 'Estamos aquí ahora', hint: 'Usa la ubicación del móvil y busca el restaurante en el que estáis' },
+      { id: 'map', icon: '🗺️', label: 'Marcar en el mapa', hint: 'Mueve el mapa y deja el pin donde está' },
+      { id: 'search', icon: '🔎', label: 'Buscar por nombre', hint: 'Escribe el nombre del restaurante' },
+      { id: 'nearby', icon: '✨', label: 'Ver sushis por la zona', hint: 'Restaurantes de sushi o asiáticos cerca de lo que se ve en el mapa' },
+    ],
+  });
+  if (choice === 'here') addHere();
+  else if (choice === 'map') enterCrosshair({ mode: 'new' });
+  else if (choice === 'search') setTimeout(() => ui.focusSearch(), 50);
+  else if (choice === 'nearby') findNearby();
+}
+
+async function addHere() {
+  if (!state.online) {
+    ui.toast('Sin conexión: márcalo en el mapa y la dirección la pondremos luego.');
+    enterCrosshair({ mode: 'new' });
+    return;
+  }
+  abort('hereAbort');
+  const controller = new AbortController();
+  state.hereAbort = controller;
+  const stillCurrent = () => state.hereAbort === controller;
+  ui.setLocateBusy(true);
+  ui.toast('Buscando dónde estáis…', { duration: 6000 });
+  try {
+    let pos;
+    try {
+      pos = await map.locate({ fly: false });
+    } catch (err) {
+      if (stillCurrent()) ui.toast(err.message);
+      return;
+    }
+    if (!stillCurrent()) return;
+    let spot;
+    try {
+      spot = await findPlaceAt(pos.lat, pos.lng, { radius: Math.min(120, Math.max(60, pos.accuracy || 60)), signal: controller.signal });
+    } catch (err) {
+      if (isAbortError(err) || !stillCurrent()) return;
+      spot = { found: false, name: '', address: '', osm: '' };
+    }
+    if (!stillCurrent()) return;
+    const vague = (pos.accuracy || 0) > 150;
+    const opened = startCandidate({
+      lat: spot.found && spot.lat ? spot.lat : pos.lat,
+      lng: spot.found && spot.lng ? spot.lng : pos.lng,
+      name: spot.found ? spot.name : '',
+      address: spot.address || '',
+      osm: spot.osm || '',
+      source: 'here',
+      needsReverse: !spot.address,
+      hint: spot.found
+        ? `Parece que estáis en ${spot.name}. Si no es, cambia el nombre.`
+        : vague
+          ? 'La ubicación es aproximada: si el pin no está bien, guárdalo y luego usa «Mover pin».'
+          : 'No sabemos el nombre de este sitio: escríbelo.',
+    });
+    if (opened) ui.toast(spot.found ? `¿Estáis en ${spot.name}?` : 'Ponle nombre al sitio.');
+  } finally {
+    if (stillCurrent()) {
+      state.hereAbort = null;
+      ui.setLocateBusy(false);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Nuestra casa
+// ---------------------------------------------------------------------------
+async function openHomeSheet() {
+  ui.setMenuOpen(false);
+  const home = state.home;
+  const choice = await ui.actionSheet(
+    home
+      ? {
+          title: '🏠 Nuestra casa',
+          actions: [
+            { id: 'go', icon: '🏠', label: 'Ir a casa en el mapa' },
+            { id: 'nearby', icon: '✨', label: 'Buscar sushi cerca de casa' },
+            { id: 'move', icon: '🗺️', label: 'Cambiarla de sitio' },
+            { id: 'gps', icon: '📍', label: 'Estamos en casa: usar mi ubicación' },
+            { id: 'remove', icon: '✕', label: 'Quitar la casa del mapa', danger: true },
+          ],
+        }
+      : {
+          title: '🏠 Nuestra casa',
+          text: 'Marcad vuestra casa: el mapa se abrirá ahí y la lista dirá a qué distancia está cada sushi. Solo la veis vosotros.',
+          actions: [
+            { id: 'gps', icon: '📍', label: 'Estamos en casa: usar mi ubicación' },
+            { id: 'move', icon: '🗺️', label: 'Marcarla en el mapa' },
+          ],
+        },
+  );
+  if (choice === 'go') map.flyTo(home, 16);
+  else if (choice === 'nearby') {
+    map.flyTo(home, 15);
+    setTimeout(() => findNearby({ around: home }), 700);
+  } else if (choice === 'move') enterCrosshair({ mode: 'home' });
+  else if (choice === 'gps') {
+    ui.setLocateBusy(true);
+    try {
+      const pos = await map.locate({ fly: true });
+      saveHome(pos);
+    } catch (err) {
+      ui.toast(err.message);
+    } finally {
+      ui.setLocateBusy(false);
+    }
+  } else if (choice === 'remove') {
+    const ok = await ui.confirm({ title: '¿Quitar la casa del mapa?', text: 'Los sushis no se tocan.', ok: 'Quitar', danger: true });
+    if (ok) for (const h of state.homes) store.remove(h.id).catch(reportError);
+  }
+}
+
+function saveHome(latlng, { quiet = false } = {}) {
+  try {
+    if (state.home) {
+      store.update(state.home.id, { lat: latlng.lat, lng: latlng.lng }).catch(reportError);
+    } else {
+      store
+        .add({ name: 'Nuestra casa', address: '', lat: latlng.lat, lng: latlng.lng, status: STATUS.PENDING, visits: [], osm: HOME_OSM })
+        .done.catch(reportError);
+    }
+    if (!quiet) ui.toast('Casa guardada 🏠');
+  } catch (err) {
+    reportError(err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// ¿Dónde vamos hoy? y estadísticas
+// ---------------------------------------------------------------------------
+/** "al lado de casa" / "a 2,3 km de casa" */
+function fromHome(p) {
+  const d = distanceMeters(state.home, p);
+  return d < 150 ? 'al lado de casa' : `a ${formatDistance(d)} de casa`;
+}
+
+function pickRandom(previousId = null) {
+  const pool = state.pending.length ? state.pending : state.visited;
+  if (!pool.length) {
+    ui.toast('Primero añadid algún sushi (o algún pendiente).');
+    return;
+  }
+  const options = pool.length > 1 ? pool.filter((p) => p.id !== previousId) : pool;
+  const place = options[Math.floor(Math.random() * options.length)];
+  openPlace(place.id);
+  const where = state.home ? ` (${fromHome(place)})` : '';
+  ui.toast(state.pending.length ? `¿Y si hoy probamos ${place.name}${where}?` : `¿Repetimos en ${place.name}${where}?`, {
+    duration: 8000,
+    action: pool.length > 1 ? 'Otro' : undefined,
+    onAction: () => pickRandom(place.id),
+  });
+}
+
+function showNumbers() {
+  const visits = state.places.flatMap((p) => p.visits.map((v) => ({ ...v, place: p })));
+  const total = visits.length;
+  const year = new Date().getFullYear();
+  const thisYear = visits.filter((v) => Number(v.date.slice(0, 4)) === year).length;
+  const sorted = [...visits].sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : 0));
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  const top = [...state.visited].sort((x, y) => y.visits.length - x.visits.length)[0];
+  const rated = state.visited.filter((p) => p.rating > 0);
+  const best = [...rated].sort((x, y) => y.rating - x.rating || y.visits.length - x.visits.length)[0];
+  const byMonth = new Map();
+  for (const v of visits) byMonth.set(v.date.slice(0, 7), (byMonth.get(v.date.slice(0, 7)) || 0) + 1);
+  const [topMonth, topMonthCount] = [...byMonth.entries()].sort((x, y) => y[1] - x[1])[0] || [];
+  const monthName = (ym) => new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(new Date(Number(ym.slice(0, 4)), Number(ym.slice(5)) - 1, 1));
+  const farthest = state.home ? [...state.visited].sort((x, y) => distanceMeters(state.home, y) - distanceMeters(state.home, x))[0] : null;
+
+  const rows = [
+    { label: 'Visitas en total', value: String(total) },
+    { label: `Visitas en ${year}`, value: String(thisYear) },
+    { label: 'Sitios distintos', value: String(state.visited.length) },
+    { label: 'Pendientes', value: String(state.pending.length) },
+  ];
+  if (top) rows.push({ label: 'El de siempre', value: top.name, hint: `×${top.visits.length}` });
+  if (best) rows.push({ label: 'Mejor puntuado', value: best.name, hint: '🍣'.repeat(best.rating) });
+  if (first) rows.push({ label: 'El primero', value: first.place.name, hint: formatDate(first.date) });
+  if (last && last !== first) rows.push({ label: 'El último', value: last.place.name, hint: formatDate(last.date) });
+  if (topMonth && topMonthCount > 1) rows.push({ label: 'Mes más sushero', value: monthName(topMonth), hint: plural(topMonthCount, 'visita', 'visitas') });
+  if (farthest) rows.push({ label: 'El más lejano', value: farthest.name, hint: fromHome(farthest) });
+  ui.showStats(rows);
+}
+
+function setMapStyle(key) {
+  if (!MAP_STYLES[key] || !map) return;
+  writeLocal(MAPSTYLE_KEY, key);
+  ui.setMapStyleUI(key);
+  map.setStyle(key);
 }
 
 const saveView = debounce((view) => {
